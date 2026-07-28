@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Flow</string>
+    <string name="app_name">TubeHub</string>
     <string name="subscriptions_search_placeholder">Search subscriptions...</string>
     <string name="subscriptions_sort_label">Sort channels</string>
     <string name="subscriptions_sort_default">Default</string>
@@ -302,7 +302,7 @@
     <string name="artist">Artist</string>
     <string name="playlist">Playlist</string>
     <string name="playlist_visibility_metadata">%1$s • %2$s</string>
-    <string name="app_name_uppercase">FLOW</string>
+    <string name="app_name_uppercase">TUBEHUB</string>
     <string name="notification_badge_9_plus">9+</string>
     <string name="personalized_feed">Your personalized feed</string>
     <string name="videos_curated_template">%1$d videos curated just for you</string>

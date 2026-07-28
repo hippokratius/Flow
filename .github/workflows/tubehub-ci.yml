@@ -1,0 +1,85 @@
+name: TubeHub CI
+
+# Fork-local CI for TubeHub feature branches.
+#
+# Deliberately a separate workflow rather than extra triggers on build.yml: build.yml is an
+# upstream Flow file, and every edit to it becomes a conflict on the next `git merge upstream/main`.
+# This file does not exist upstream, so it can never conflict.
+#
+# Scope is the debug variant only — build.yml still covers the full release matrix on main.
+
+on:
+  push:
+    branches:
+      - 'claude/**'
+      - 'tubehub/**'
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tubehub-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Test and build debug
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: gradle
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      # Flow declares productFlavors { github, foss }, so plain `assembleDebug` and
+      # `testDebugUnitTest` do not exist — every task has to be flavor-prefixed.
+      - name: Run unit tests
+        run: >
+          ./gradlew :app:testGithubDebugUnitTest
+          --build-cache --no-daemon --stacktrace
+
+      # The foss flavor excludes the updater and Discord Rich Presence, so it is the variant
+      # that catches flavor-conditional code that only compiles against the github source set.
+      - name: Compile foss variant
+        run: >
+          ./gradlew :app:compileFossDebugKotlin
+          --build-cache --no-daemon --stacktrace
+
+      - name: Lint
+        run: >
+          ./gradlew :app:lintGithubDebug
+          --build-cache --no-daemon --stacktrace
+
+      - name: Upload lint report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lint-report
+          path: app/build/reports/lint-results-githubDebug.html
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Build debug APK
+        run: >
+          ./gradlew :app:assembleGithubDebug
+          --build-cache --no-daemon --stacktrace
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: tubehub-debug-apk
+          path: app/build/outputs/apk/github/debug/*.apk
+          if-no-files-found: error
+          retention-days: 14

@@ -1,5 +1,6 @@
 package io.github.aedev.flow.data.model
 
+import io.github.aedev.flow.data.source.SourceKind
 import org.schabi.newpipe.extractor.Page
 
 data class VideoCollaborator(
@@ -32,7 +33,12 @@ data class Video(
     val collaborators: List<VideoCollaborator> = emptyList(),
     // Transient: when this video was added to the playlist currently being viewed. Not persisted
     // on the video row — populated only by playlist-scoped queries.
-    val addedAtInPlaylist: Long? = null
+    val addedAtInPlaylist: Long? = null,
+    // Which backend this came from. Always derivable from [id] via ContentId, but carried here so
+    // hot paths (list item keys, feed merging) don't re-parse the id on every recomposition.
+    val source: SourceKind = SourceKind.YOUTUBE,
+    // Host of the originating instance for federated sources. Null for YouTube and local media.
+    val instanceHost: String? = null
 )
 
 data class Channel(
@@ -43,7 +49,9 @@ data class Channel(
     val description: String = "",
     val isSubscribed: Boolean = false,
     val isMusic: Boolean = false,
-    val url: String = "" // Full channel URL for navigation
+    val url: String = "", // Full channel URL for navigation
+    val source: SourceKind = SourceKind.YOUTUBE,
+    val instanceHost: String? = null
 )
 
 data class Playlist(

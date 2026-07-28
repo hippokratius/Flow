@@ -1,3 +1,12 @@
+> ## TubeHub
+>
+> **TubeHub is a fork of [Flow](https://github.com/A-EDev/Flow)**, Copyright © 2025-2026 A-EDev
+> and the Flow contributors, licensed GPL-3.0. TubeHub extends it with PeerTube support and
+> Fediverse interaction, and is distributed under the same license.
+>
+> See [`NOTICE.md`](NOTICE.md) for the modification notice required by GPLv3 §5(a).
+> The README below is upstream Flow's and still describes the YouTube client it is built on.
+
 <div align="center">
   <img src="Assets/logo.png" alt="Flow Logo" width="140" height="140">
   <br><br>

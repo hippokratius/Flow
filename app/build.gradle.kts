@@ -14,11 +14,14 @@ android {
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "io.github.aedev.flow"
+        // TubeHub ships under its own application id. The `namespace` above deliberately stays
+        // io.github.aedev.flow: it is what the generated R and BuildConfig live in, and keeping it
+        // means upstream Flow merges do not conflict on the package line of every source file.
+        applicationId = "de.tubehub.app"
         minSdk = 26
         targetSdk = 34
-        versionCode = 17
-        versionName = "2.2.0"
+        versionCode = 1
+        versionName = "0.1.0"
 
         testInstrumentationRunner = "io.github.aedev.flow.HiltTestRunner"
         vectorDrawables {
@@ -47,7 +50,11 @@ android {
             dimension = "version"
             isDefault = true
             buildConfigField("Boolean", "UPDATER_ENABLED", "true")
-            buildConfigField("String", "DISCORD_APPLICATION_ID", "\"1526515771021328514\"")
+            // Blank until TubeHub registers its own Discord application. The upstream value was
+            // A-EDev's and must not ship under this app's branding. A blank id is a supported
+            // state: KizzyDiscordPresenceTransport reports isAvailable = false and the Rich
+            // Presence settings surface the "missing application id" message.
+            buildConfigField("String", "DISCORD_APPLICATION_ID", "\"\"")
         }
         create("foss") {
             dimension = "version"
