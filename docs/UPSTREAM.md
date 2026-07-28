@@ -67,9 +67,28 @@ Keep this list short. If it grows, the seam has drifted.
 | `app/build.gradle.kts` | `applicationId`, version reset, blanked Discord application id |
 | `settings.gradle.kts` | `rootProject.name` |
 | `README.md` | fork attribution banner |
-| `app/src/main/res/values/strings.xml` | `app_name`, `app_name_uppercase` |
+| `app/src/main/res/values/strings.xml` | `app_name`, `app_name_uppercase`, appended TubeHub strings |
 | `data/model/Models.kt` | two defaulted fields each on `Video` and `Channel` |
 | `data/local/entity/VideoEntity.kt` | recompute `source`/`instanceHost` in `toDomain()` |
+| `ui/screens/home/HomeViewModel.kt` | registry parameter, one `async` lane, two merge calls, three source guards |
+| `ui/screens/player/VideoPlayerViewModel.kt` | dispatch branch for federated ids, history thumbnail guard |
+| `player/EnhancedPlayerManager.kt` | SponsorBlock and `ServiceList.YouTube` guards |
+| `utils/ThumbnailUrlResolver.kt` | non-YouTube ids keep their raw thumbnail |
+| `ui/screens/settings/SettingsScreen.kt` | nav lambda, list row, search entry |
+| `ui/FlowNavigation.kt` | nav lambda and one `composable` route |
+
+### Why those guards exist
+
+Four upstream spots silently assume every video id is a YouTube id. They are cheap to fence off and
+expensive to discover later, so they are guarded rather than worked around:
+
+- `enrichChannelMetadataIfMissing` treats any channel id without a `UC` prefix as incomplete, and is
+  invoked per rendered card — every federated card would fire a YouTube lookup on each scroll.
+- `saveHistoryEntry` and `ThumbnailUrlResolver` fabricate an `i.ytimg.com` URL from the id when no
+  thumbnail is known, writing a permanently broken link into the watch history.
+- Graph seeds from the watch history are passed to YouTube's related-videos endpoint.
+- `setStreams` requested SponsorBlock segments for every id, which for a federated video disclosed
+  the instance host to a third-party server.
 
 ## Build
 
