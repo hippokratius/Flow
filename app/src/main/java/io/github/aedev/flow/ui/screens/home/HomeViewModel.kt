@@ -1613,9 +1613,7 @@ class HomeViewModel @Inject constructor(
      * inside the source itself and reported through [io.github.aedev.flow.data.source.SourcePage].
      */
     private suspend fun fetchFederatedVideos(): List<Video> {
-        val sources = contentSourceRegistry.enabled.filter {
-            it.kind != io.github.aedev.flow.data.source.SourceKind.YOUTUBE
-        }
+        val sources = contentSourceRegistry.all.filter { it.kind != SourceKind.YOUTUBE }
         if (sources.isEmpty()) return emptyList()
 
         return supervisorScope {

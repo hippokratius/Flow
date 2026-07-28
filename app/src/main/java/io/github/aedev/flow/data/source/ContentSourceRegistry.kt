@@ -25,6 +25,9 @@ class ContentSourceRegistry @Inject constructor(
 ) {
     val keys: List<String> = sources.keys.toList()
 
+    /** Every registered source, unordered. */
+    val all: List<ContentSource> get() = sources.values.toList()
+
     fun byKey(key: String): ContentSource? = sources[key]
 
     fun forId(id: ContentId): ContentSource? = sources.values.firstOrNull { it.handles(id) }

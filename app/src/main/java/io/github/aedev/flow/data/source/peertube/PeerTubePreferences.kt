@@ -18,6 +18,7 @@ import io.github.aedev.flow.data.local.safePreferencesDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 import java.util.UUID
 import javax.inject.Inject
@@ -44,7 +45,7 @@ class PeerTubePreferences @Inject constructor(
         .map { preferences ->
             val raw = preferences[KEY_INSTANCES] ?: return@map DEFAULT_PEERTUBE_INSTANCES
             runCatching {
-                json.decodeFromString<List<PeerTubeInstance>>(raw)
+                json.decodeFromString(instanceListSerializer, raw)
             }.getOrElse {
                 // Never let a bad blob take the feed down with it.
                 Log.w(TAG, "Discarding unreadable PeerTube instance list", it)
@@ -69,15 +70,16 @@ class PeerTubePreferences @Inject constructor(
     private suspend fun update(transform: (List<PeerTubeInstance>) -> List<PeerTubeInstance>) {
         context.tubeHubPreferencesDataStore.edit { preferences ->
             val current = preferences[KEY_INSTANCES]
-                ?.let { raw -> runCatching { json.decodeFromString<List<PeerTubeInstance>>(raw) }.getOrNull() }
+                ?.let { raw -> runCatching { json.decodeFromString(instanceListSerializer, raw) }.getOrNull() }
                 ?: DEFAULT_PEERTUBE_INSTANCES
-            preferences[KEY_INSTANCES] = json.encodeToString(transform(current))
+            preferences[KEY_INSTANCES] = json.encodeToString(instanceListSerializer, transform(current))
         }
     }
 
     private companion object {
         const val TAG = "PeerTubePreferences"
         val KEY_INSTANCES = stringPreferencesKey("peertube_instances")
+        val instanceListSerializer = ListSerializer(PeerTubeInstance.serializer())
     }
 }
 
