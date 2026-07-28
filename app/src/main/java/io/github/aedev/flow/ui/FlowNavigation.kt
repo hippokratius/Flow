@@ -350,6 +350,7 @@ fun NavGraphBuilder.flowAppGraph(
             onNavigateToImport = { navController.navigate("settings/import") },
             onNavigateToPlayerSettings = { navController.navigate("settings/player") },
             onNavigateToProxySettings = { navController.navigate("settings/proxy") },
+            onNavigateToPeerTubeInstances = { navController.navigate("settings/peertube") },
             onNavigateToVideoQuality = { navController.navigate("settings/video_quality") },
             onNavigateToShortsQuality = { navController.navigate("settings/shorts_quality") },
             onNavigateToContentSettings = { navController.navigate("settings/content") },
@@ -421,6 +422,14 @@ fun NavGraphBuilder.flowAppGraph(
         currentRoute.value = "settings/proxy"
         showBottomNav.value = false
         io.github.aedev.flow.ui.screens.settings.ProxySettingsScreen(
+            onNavigateBack = { navController.popBackStack() }
+        )
+    }
+
+    composable("settings/peertube") {
+        currentRoute.value = "settings/peertube"
+        showBottomNav.value = false
+        io.github.aedev.flow.ui.screens.settings.PeerTubeInstancesScreen(
             onNavigateBack = { navController.popBackStack() }
         )
     }

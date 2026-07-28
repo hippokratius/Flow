@@ -14,6 +14,8 @@ import io.github.aedev.flow.data.recommendation.FlowNeuroEngine
 import io.github.aedev.flow.ui.components.FeedInvalidationBus
 import io.github.aedev.flow.data.recommendation.InteractionType
 import io.github.aedev.flow.data.repository.YouTubeRepository
+import io.github.aedev.flow.data.source.SourceKind
+import io.github.aedev.flow.data.source.contentId
 import io.github.aedev.flow.player.BackgroundPlaybackPolicy
 import io.github.aedev.flow.player.EnhancedPlayerManager
 import io.github.aedev.flow.player.EnhancedMusicPlayerManager
@@ -89,7 +91,8 @@ class VideoPlayerViewModel @Inject constructor(
     private val playerPreferences: PlayerPreferences,
     private val videoDownloadManager: VideoDownloadManager,
     private val sponsorBlockRepository: SponsorBlockRepository,
-    private val liveChatRepository: io.github.aedev.flow.data.repository.LiveChatRepository
+    private val liveChatRepository: io.github.aedev.flow.data.repository.LiveChatRepository,
+    private val externalSourcePlaybackLoader: io.github.aedev.flow.player.source.ExternalSourcePlaybackLoader
 ) : ViewModel() {
     
     private val _uiState = MutableStateFlow(VideoPlayerUiState())
@@ -1113,6 +1116,13 @@ class VideoPlayerViewModel @Inject constructor(
     ) {
         if (isLocalMediaId(videoId)) {
             Log.d("VideoPlayerViewModel", "loadVideoInfo: $videoId is a local file — skipping all network loading")
+            return
+        }
+        // Content from a federated source resolves through its own ContentSource; none of the
+        // InnerTube/NewPipe/PoToken/SABR machinery below applies to it.
+        val contentId = videoId.contentId
+        if (contentId.kind == SourceKind.PEERTUBE) {
+            loadExternalSourceVideo(contentId, resumePositionOverrideMs ?: 0L)
             return
         }
         val currentState = _uiState.value
@@ -2577,6 +2587,38 @@ class VideoPlayerViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Playback for a federated source (currently PeerTube).
+     *
+     * Everything the YouTube path needs — cipher solving, PoToken attestation, the InnerTube versus
+     * NewPipe race — is irrelevant here: the source hands back a ready stream URL. Resolution and
+     * player hand-off live in [io.github.aedev.flow.player.source.ExternalSourcePlaybackLoader] so
+     * this file stays close to upstream.
+     */
+    private fun loadExternalSourceVideo(
+        contentId: io.github.aedev.flow.data.source.ContentId,
+        resumePositionMs: Long,
+    ) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true, error = null, errorHint = null) }
+
+            val spec = externalSourcePlaybackLoader.start(context, contentId, resumePositionMs)
+            if (spec == null) {
+                _uiState.update {
+                    it.copy(
+                        isLoading = false,
+                        error = context.getString(R.string.error_all_stream_sources_failed),
+                        errorHint = context.getString(R.string.error_playback_retry_hint)
+                    )
+                }
+                return@launch
+            }
+
+            _uiState.update { it.copy(isLoading = false, error = null, errorHint = null) }
+            applyRememberedPlaybackSpeed(isLive = spec.isLive, manager = EnhancedPlayerManager.getInstance())
+        }
+    }
+
     private suspend fun prepareLocalMediaForPlayback(
         videoId: String,
         localFilePath: String,
@@ -2684,8 +2726,14 @@ class VideoPlayerViewModel @Inject constructor(
                 videoId     = video.id,
                 duration    = if (video.duration > 0) video.duration * 1000L else 0L,
                 title       = video.title,
+                // Only guess a YouTube thumbnail URL for YouTube videos; for any other source that
+                // guess is a permanently broken link written into the watch history.
                 thumbnailUrl = video.thumbnailUrl.takeIf { it.isNotEmpty() }
-                    ?: "https://i.ytimg.com/vi/${video.id}/hq720.jpg",
+                    ?: if (video.id.contentId.kind == SourceKind.YOUTUBE) {
+                        "https://i.ytimg.com/vi/${video.id}/hq720.jpg"
+                    } else {
+                        ""
+                    },
                 channelName = video.channelName,
                 channelId   = video.channelId,
                 isShort     = video.isShort

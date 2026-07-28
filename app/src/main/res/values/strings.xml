@@ -2411,4 +2411,19 @@
     <string name="fallback_your_watch_later_list">Your watch later list</string>
     <string name="fallback_downloaded_locally">Downloaded locally</string>
     <string name="fallback_more_results">More results</string>
+
+    <!-- === TubeHub: PeerTube =================================================================
+         Fork-only strings. Kept together at the end so that upstream Flow changes to this file
+         merge cleanly instead of interleaving with them. -->
+    <string name="settings_item_peertube">PeerTube instances</string>
+    <string name="settings_item_peertube_subtitle">Add servers whose videos appear in your feed</string>
+    <string name="peertube_instances_title">PeerTube instances</string>
+    <string name="peertube_instances_description">Videos from the instances you enable here are mixed into your home feed. Everything stays on your device — no account is required.</string>
+    <string name="peertube_instances_empty">No instances yet. Add one above to see PeerTube videos in your feed.</string>
+    <string name="peertube_instance_url_label">Instance address</string>
+    <string name="peertube_instance_url_placeholder">framatube.org</string>
+    <string name="peertube_instance_name_label">Name (optional)</string>
+    <string name="peertube_instance_name_hint">Leave empty to use the server address</string>
+    <string name="peertube_instance_add">Add instance</string>
+    <string name="peertube_instance_remove">Remove instance</string>
 </resources>

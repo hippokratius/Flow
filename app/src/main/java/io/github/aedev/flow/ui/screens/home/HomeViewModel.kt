@@ -19,6 +19,8 @@ import io.github.aedev.flow.data.local.SubscriptionRepository
 import io.github.aedev.flow.data.local.ViewHistory
 import io.github.aedev.flow.data.local.VideoHistoryEntry
 import io.github.aedev.flow.data.model.Video
+import io.github.aedev.flow.data.source.SourceKind
+import io.github.aedev.flow.data.source.contentId
 import io.github.aedev.flow.data.model.toVideo
 import io.github.aedev.flow.data.repository.YouTubeRepository
 import io.github.aedev.flow.data.shorts.ShortsRepository
@@ -163,7 +165,9 @@ private data class Wave1FeedResults(
     val subs: List<Video>,
     val discovery: List<Video>,
     val viral: List<Video>,
-    val related: RelatedGraphFetchResult
+    val related: RelatedGraphFetchResult,
+    /** Videos from non-YouTube sources, merged in after ranking rather than competing in it. */
+    val federated: List<Video> = emptyList()
 )
 
 private data class RelatedGraphFetchResult(
@@ -512,11 +516,15 @@ class HomeViewModel @Inject constructor(
     private val subscriptionRepository: SubscriptionRepository, 
     private val shortsRepository: ShortsRepository,
     private val playerPreferences: io.github.aedev.flow.data.local.PlayerPreferences,
+    private val contentSourceRegistry: io.github.aedev.flow.data.source.ContentSourceRegistry,
     @ApplicationContext private val appContext: Context
 ) : ViewModel() {
     companion object {
         private const val TAG = "HomeViewModel"
         private const val HOME_TARGET_SIZE = 40
+        /** Over-fetched once so the paging path can drain a backlog instead of re-querying. */
+        private const val FEDERATED_FETCH_SIZE = 30
+        private const val FEDERATED_FETCH_TIMEOUT_MS = 8_000L
         private const val FRESH_SUB_WINDOW_MS = 72L * 60L * 60L * 1000L
         private const val HOME_MAX_SUGGESTION_AGE_MS = 365L * 24L * 60L * 60L * 1000L
         private const val RELATED_TTL_MS = 45L * 60L * 1000L
@@ -554,7 +562,15 @@ class HomeViewModel @Inject constructor(
     private var homePrefetchJob: Job? = null
 
     private var subsBacklog: List<Video> = emptyList()
-    
+
+    /**
+     * Federated videos fetched but not yet shown, drained by the paging path.
+     *
+     * Mirrors [subsBacklog] rather than introducing a cursor: over-fetching once and keeping the
+     * surplus means scrolling costs no extra network round trips to the instances.
+     */
+    private var federatedBacklog: List<Video> = emptyList()
+
     private var currentQueryIndex = 0
     private val discoveryQueries = mutableListOf<String>()
     private var wave2Job: Job? = null
@@ -925,6 +941,9 @@ class HomeViewModel @Inject constructor(
                         fetchRelatedGraph(seedInputs, seedIds)
                     }
 
+                    // ── Federated lane: PeerTube and any future non-YouTube source ──
+                    val deferredFederated = async { fetchFederatedVideos() }
+
                     // ── Fast first paint ────────────────────────────────────────
                     val viralResult = deferredViral.await()
                     if (viralResult.isNotEmpty() && userSubs.isEmpty()) {
@@ -950,7 +969,8 @@ class HomeViewModel @Inject constructor(
                         subs = deferredSubs.await(),
                         discovery = deferredDiscovery.await(),
                         viral = viralResult,
-                        related = deferredRelated.await()
+                        related = deferredRelated.await(),
+                        federated = deferredFederated.await()
                     )
                 }
 
@@ -1089,10 +1109,16 @@ class HomeViewModel @Inject constructor(
                     "Flow mix: freshLane=$freshAdded, final=${finalMix.size}, quotas=${quotas}, selected=${sourceMix.sourceCounts}"
                 )
 
-                val spacedMix = repository.enrichLikelyCollabAvatarStacks(
+                val youtubeMix = repository.enrichLikelyCollabAvatarStacks(
                     spaceByChannel(finalMix),
                     limit = 8
                 )
+                // Merged only after ranking, blending and collaborator enrichment. Those steps are
+                // YouTube-specific — enrichLikelyCollabAvatarStacks looks each video up on YouTube —
+                // so federated content must not be present while they run.
+                val federatedMerge = mergeFederatedVideos(youtubeMix, results.federated)
+                federatedBacklog = federatedMerge.leftover
+                val spacedMix = federatedMerge.videos
                 val renderedIds = spacedMix.mapTo(HashSet()) { it.id }
                 val reserveCandidates =
                     cacheRelatedCandidates(bestRelated, relatedMetadata, renderedIds) +
@@ -1354,9 +1380,15 @@ class HomeViewModel @Inject constructor(
     }
 
     private suspend fun appendLoadMorePage(
-        page: List<Video>,
+        rawPage: List<Video>,
         generation: Int
     ): List<Video>? {
+        // Federated videos ride along with whichever YouTube lane produced this page, keeping the
+        // same cadence as the first screen. Drained from the backlog, so no extra network call.
+        val federatedMerge = mergeFederatedVideos(rawPage, federatedBacklog)
+        federatedBacklog = federatedMerge.leftover
+        val page = federatedMerge.videos
+
         if (page.isEmpty() || !homePrefetchQueue.isCurrent(generation)) return null
         var updatedSnapshot: List<Video>? = null
         var appendedPage = emptyList<Video>()
@@ -1381,10 +1413,15 @@ class HomeViewModel @Inject constructor(
     }
 
     private suspend fun enrichVisibleChannelMetadata(videos: List<Video>): List<Video>? {
-        val enriched = repository.enrichMissingChannelMetadata(videos)
-        if (enriched == videos) return null
+        // Channel metadata enrichment is a YouTube lookup, and its "is this incomplete?" test is
+        // simply "does the channel id start with UC" — which is false for every federated video.
+        // Without this filter each one would trigger a pointless YouTube request.
+        val enrichable = videos.filter { it.id.contentId.kind == SourceKind.YOUTUBE }
+        if (enrichable.isEmpty()) return null
+        val enriched = repository.enrichMissingChannelMetadata(enrichable)
+        if (enriched == enrichable) return null
 
-        val originalById = videos.associateBy { it.id }
+        val originalById = enrichable.associateBy { it.id }
         val updates = enriched
             .filter { enrichedVideo -> originalById[enrichedVideo.id] != enrichedVideo }
             .associateBy { it.id }
@@ -1402,6 +1439,10 @@ class HomeViewModel @Inject constructor(
     }
 
     fun enrichChannelMetadataIfMissing(videoId: String) {
+        // Called from a LaunchedEffect on every rendered card. The staleness test below treats any
+        // channel id without a "UC" prefix as incomplete, so without this guard every federated
+        // card would fire a YouTube channel lookup on each scroll.
+        if (videoId.contentId.kind != SourceKind.YOUTUBE) return
         val video = _uiState.value.videos.firstOrNull { it.id == videoId } ?: return
         val needsMetadata = video.channelId.isBlank() ||
             !video.channelId.startsWith("UC") ||
@@ -1537,7 +1578,10 @@ class HomeViewModel @Inject constructor(
 
     private suspend fun buildSeedInputs(): List<GraphSeedInput> {
         val history = viewHistory?.getVideoHistoryFlow()?.first() ?: return emptyList()
+        // Seeds are fed to YouTube's related-videos endpoint, so only YouTube ids belong here —
+        // a federated id would simply produce a failed lookup.
         return graphSeedInputsFromHistory(history)
+            .filter { it.id.contentId.kind == SourceKind.YOUTUBE }
     }
 
     private suspend fun fetchRelatedVideos(seedId: String): List<Video> {
@@ -1561,6 +1605,31 @@ class HomeViewModel @Inject constructor(
     }
 
     /** Expands seed video ids into related (/next) neighbours with graph metadata. */
+    /**
+     * Pulls a page from every non-YouTube content source.
+     *
+     * Failures collapse to an empty list in the same way the YouTube lanes do — a source being
+     * unreachable must degrade the feed, never break it. Per-instance failures are already absorbed
+     * inside the source itself and reported through [io.github.aedev.flow.data.source.SourcePage].
+     */
+    private suspend fun fetchFederatedVideos(): List<Video> {
+        val sources = contentSourceRegistry.enabled.filter {
+            it.kind != io.github.aedev.flow.data.source.SourceKind.YOUTUBE
+        }
+        if (sources.isEmpty()) return emptyList()
+
+        return supervisorScope {
+            sources.map { source ->
+                async {
+                    withTimeoutOrNull(FEDERATED_FETCH_TIMEOUT_MS) {
+                        runCatching { source.feed(limit = FEDERATED_FETCH_SIZE).items }
+                            .getOrElse { emptyList() }
+                    } ?: emptyList()
+                }
+            }.awaitAll().flatten()
+        }
+    }
+
     private suspend fun fetchRelatedGraph(
         seedInputs: List<GraphSeedInput>,
         seedIds: List<String>

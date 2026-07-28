@@ -81,6 +81,7 @@ fun SettingsScreen(
     onNavigateToImport: () -> Unit,
     onNavigateToPlayerSettings: () -> Unit,
     onNavigateToProxySettings: () -> Unit,
+    onNavigateToPeerTubeInstances: () -> Unit,
     onNavigateToVideoQuality: () -> Unit,
     onNavigateToShortsQuality: () -> Unit,
     onNavigateToContentSettings: () -> Unit,
@@ -260,6 +261,7 @@ fun SettingsScreen(
         SettingSearchEntry(Icons.Outlined.PlayCircle, androidx.compose.ui.res.stringResource(io.github.aedev.flow.R.string.settings_item_player), androidx.compose.ui.res.stringResource(io.github.aedev.flow.R.string.settings_item_player_subtitle), secContentPlayback, onNavigateToPlayerSettings),
         SettingSearchEntry(Icons.Outlined.Share, androidx.compose.ui.res.stringResource(io.github.aedev.flow.R.string.discord_presence_title), discordSettingsSummary, secContentPlayback, onNavigateToDiscordSettings),
         SettingSearchEntry(Icons.Outlined.Public, androidx.compose.ui.res.stringResource(io.github.aedev.flow.R.string.settings_item_proxy), androidx.compose.ui.res.stringResource(io.github.aedev.flow.R.string.settings_item_proxy_subtitle), secContentPlayback, onNavigateToProxySettings),
+        SettingSearchEntry(Icons.Outlined.Hub, androidx.compose.ui.res.stringResource(io.github.aedev.flow.R.string.settings_item_peertube), androidx.compose.ui.res.stringResource(io.github.aedev.flow.R.string.settings_item_peertube_subtitle), secContentPlayback, onNavigateToPeerTubeInstances),
         SettingSearchEntry(io.github.aedev.flow.R.drawable.ic_block, androidx.compose.ui.res.stringResource(io.github.aedev.flow.R.string.sb_settings_title), androidx.compose.ui.res.stringResource(io.github.aedev.flow.R.string.sb_settings_subtitle), secContentPlayback, onNavigateToSponsorBlockSettings),
         SettingSearchEntry(Icons.Outlined.HighQuality, androidx.compose.ui.res.stringResource(io.github.aedev.flow.R.string.settings_item_quality), androidx.compose.ui.res.stringResource(io.github.aedev.flow.R.string.settings_item_quality_subtitle), secContentPlayback, onNavigateToVideoQuality),
         SettingSearchEntry(Icons.Outlined.Slideshow, androidx.compose.ui.res.stringResource(io.github.aedev.flow.R.string.shorts_quality_settings_title), androidx.compose.ui.res.stringResource(io.github.aedev.flow.R.string.shorts_quality_settings_subtitle), secContentPlayback, onNavigateToShortsQuality),
@@ -813,6 +815,13 @@ item {
                         title = androidx.compose.ui.res.stringResource(io.github.aedev.flow.R.string.settings_item_proxy),
                         subtitle = androidx.compose.ui.res.stringResource(io.github.aedev.flow.R.string.settings_item_proxy_subtitle),
                         onClick = onNavigateToProxySettings
+                    )
+                    HorizontalDivider(Modifier.padding(start = 56.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                    SettingsItem(
+                        icon = Icons.Outlined.Hub,
+                        title = androidx.compose.ui.res.stringResource(io.github.aedev.flow.R.string.settings_item_peertube),
+                        subtitle = androidx.compose.ui.res.stringResource(io.github.aedev.flow.R.string.settings_item_peertube_subtitle),
+                        onClick = onNavigateToPeerTubeInstances
                     )
                     HorizontalDivider(Modifier.padding(start = 56.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
                     SettingsItem(

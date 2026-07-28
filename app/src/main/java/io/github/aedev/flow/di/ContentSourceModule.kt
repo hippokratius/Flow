@@ -17,6 +17,7 @@ import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
 import io.github.aedev.flow.data.source.ContentSource
 import io.github.aedev.flow.data.source.ContentSourceRegistry
+import io.github.aedev.flow.data.source.peertube.PeerTubeContentSource
 import io.github.aedev.flow.data.source.youtube.YouTubeContentSource
 
 /**
@@ -33,4 +34,9 @@ abstract class ContentSourceModule {
     @IntoMap
     @StringKey(ContentSourceRegistry.KEY_YOUTUBE)
     abstract fun bindYouTubeSource(impl: YouTubeContentSource): ContentSource
+
+    @Binds
+    @IntoMap
+    @StringKey(ContentSourceRegistry.KEY_PEERTUBE)
+    abstract fun bindPeerTubeSource(impl: PeerTubeContentSource): ContentSource
 }

@@ -41,6 +41,8 @@ import io.github.aedev.flow.player.analytics.PlaybackAnalyticsLogger
 import io.github.aedev.flow.player.cache.PlayerCacheManager
 import io.github.aedev.flow.player.config.PlayerConfig
 import io.github.aedev.flow.data.model.Video
+import io.github.aedev.flow.data.source.ContentId
+import io.github.aedev.flow.data.source.SourceKind
 import io.github.aedev.flow.player.error.PlayerDiagnostics
 import io.github.aedev.flow.player.error.PlayerErrorHandler
 import io.github.aedev.flow.player.factory.PlayerFactory
@@ -853,9 +855,13 @@ class EnhancedPlayerManager private constructor() {
         isAudioOnlyMode = keepAudioOnly
         setVideoTracksDisabled(keepAudioOnly)
 
-        // Reset and load SponsorBlock
+        // Reset and load SponsorBlock. Only for YouTube: the SponsorBlock API is keyed on YouTube
+        // video ids, so for any other source the request is not merely useless — it would disclose
+        // a federated instance host to a third-party server.
         sponsorBlockHandler?.reset()
-        sponsorBlockHandler?.loadSegments(videoId)
+        if (ContentId(videoId).kind == SourceKind.YOUTUBE) {
+            sponsorBlockHandler?.loadSegments(videoId)
+        }
         
         this.currentDurationSeconds = durationSeconds
         this.currentDashManifestUrl = dashManifestUrl
@@ -2055,6 +2061,9 @@ class EnhancedPlayerManager private constructor() {
     }
 
     private suspend fun fetchStreamInfoForPlayback(videoId: String): StreamInfo? = withContext(Dispatchers.IO) {
+        // NewPipe would resolve this against ServiceList.YouTube below; a federated id has no
+        // meaning there and its stream is resolved by its own ContentSource instead.
+        if (ContentId(videoId).kind != SourceKind.YOUTUBE) return@withContext null
         var lastError: Throwable? = null
         repeat(3) { attempt ->
             val info = try {
