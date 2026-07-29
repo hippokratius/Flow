@@ -89,6 +89,34 @@ Keep this list short. If it grows, the seam has drifted.
 | `MainActivity.kt` | one early-return for the MiAuth callback |
 | `AndroidManifest.xml` | MiAuth intent filter, backup exclusion rules |
 | `app/build.gradle.kts`, `gradle/libs.versions.toml` | `androidx.browser` for Custom Tabs |
+| `app/build.gradle.kts`, `.gitignore`, `app/debug.keystore` | fixed debug signing key |
+| `res/values/strings.xml`, `res/values/colors.xml` | brand-name and icon-picker keys, plate colour |
+| 8 Kotlin files | product name and icon-picker labels moved to untranslatable keys |
+| 14 drawables under `res/drawable/` | upstream brand mark replaced by a neutral glyph |
+
+### Why the debug key is committed
+
+Gradle otherwise falls back to `~/.android/debug.keystore`, which is generated per machine. Every CI
+runner is fresh, so each artifact would be signed with a different key and none would install over
+the one before it. The committed key is Android's standard debug credential and carries no security
+meaning; the release keystore stays ignored.
+
+### Why the brand name lives in its own key
+
+`app_name` and `app_name_uppercase` are translated in 23 and 18 locales. Changing only the default
+leaves the upstream name showing on every non-English device, and editing locale files is both
+forbidden here and reverted by Weblate. `app_brand_name` and `app_brand_name_uppercase` are declared
+`translatable="false"` instead; the originals stay declared so their translations do not become
+extra-translation lint errors. The three icon-picker labels that named the upstream project were
+handled the same way.
+
+### Why the artwork changed
+
+Forking GPL code grants no rights to the project's trademark. The upstream mark appeared in fourteen
+drawables — launcher variants, splash screens, the playback notification and the in-app badge — so
+the app identified itself as Flow at every start. All now carry a plain play glyph. The
+`activity-alias` entries and the icon picker are untouched: swapping the glyph covers every variant
+at once and leaves no dead UI.
 
 ### Why those guards exist
 
