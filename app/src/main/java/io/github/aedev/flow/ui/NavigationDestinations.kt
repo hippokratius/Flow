@@ -1,6 +1,8 @@
 package io.github.aedev.flow.ui
 
 import io.github.aedev.flow.data.local.DEFAULT_NAV_TAB_ORDER
+import io.github.aedev.flow.data.source.SourceKind
+import io.github.aedev.flow.data.source.contentId
 import java.net.URI
 import java.net.URLEncoder
 
@@ -51,6 +53,10 @@ internal fun navRouteForIndex(index: Int): String = when (index) {
 internal fun youtubeChannelUrl(channelIdOrHandle: String): String? {
     val value = channelIdOrHandle.trim()
     if (value.isEmpty()) return null
+    // A channel from another source is not a YouTube handle. Without this guard the `else` branch
+    // below turns e.g. "peertube_tilvids.com_news" into "https://www.youtube.com/@peertube_..." and
+    // navigates to a page that cannot exist. Callers treat null as "no in-app channel page".
+    if (value.contentId.kind != SourceKind.YOUTUBE) return null
     return when {
         value.startsWith("http://") || value.startsWith("https://") -> normalizeYoutubeChannelUrl(value)
         value.startsWith("UC") -> "https://www.youtube.com/channel/$value"

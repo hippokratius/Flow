@@ -2426,4 +2426,6 @@
     <string name="peertube_instance_name_hint">Leave empty to use the server address</string>
     <string name="peertube_instance_add">Add instance</string>
     <string name="peertube_instance_remove">Remove instance</string>
+    <string name="source_badge_youtube">From YouTube</string>
+    <string name="source_badge_peertube">From PeerTube</string>
 </resources>

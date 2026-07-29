@@ -23,8 +23,17 @@ fun watchUrl(id: ContentId): String = when (id.kind) {
     SourceKind.YOUTUBE -> "https://www.youtube.com/watch?v=${id.raw}"
 }
 
-fun channelUrl(id: ContentId, channelId: String): String = when (id.kind) {
-    SourceKind.PEERTUBE -> "https://${id.instanceHost}/c/$channelId"
-    SourceKind.LOCAL -> ""
-    SourceKind.YOUTUBE -> "https://www.youtube.com/channel/$channelId"
+/**
+ * Web page of a channel on a federated instance, or null when there is none.
+ *
+ * Takes the channel's own [ContentId] — channel ids carry the same source prefix as video ids.
+ * Returns null for YouTube on purpose: that case is already handled by `youtubeChannelUrl`, which
+ * knows about `UC` ids, `@` handles and full URLs. This helper answers only "does this channel live
+ * somewhere other than YouTube, and where?".
+ */
+fun federatedChannelUrl(channelId: ContentId): String? = when (channelId.kind) {
+    SourceKind.PEERTUBE -> channelId.instanceHost
+        ?.takeIf { it.isNotBlank() }
+        ?.let { host -> "https://$host/c/${channelId.nativeId}" }
+    SourceKind.LOCAL, SourceKind.YOUTUBE -> null
 }

@@ -228,6 +228,19 @@ fun VideoInfoSection(
                             maxLines = 1
                         )
                     }
+
+                    // The player shows no thumbnail, so the card badge cannot carry the origin
+                    // here. Naming the instance is also more useful than a generic mark: which
+                    // server a federated video came from is the part that actually varies.
+                    video.instanceHost?.takeIf { it.isNotBlank() }?.let { host ->
+                        Text(
+                            text = host,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.extendedColors.textSecondary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
                 }
             }
 

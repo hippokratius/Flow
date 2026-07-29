@@ -29,6 +29,7 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import io.github.aedev.flow.R
 import io.github.aedev.flow.data.model.Video
+import io.github.aedev.flow.ui.components.VideoSourceBadge
 import io.github.aedev.flow.ui.components.VideoThumbnailImage
 import io.github.aedev.flow.utils.formatDuration
 
@@ -61,6 +62,13 @@ internal fun LibraryVideoCard(
                 contentDescription = null,
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop
+            )
+
+            VideoSourceBadge(
+                source = video.source,
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(8.dp)
             )
 
             if (video.duration > 0) {

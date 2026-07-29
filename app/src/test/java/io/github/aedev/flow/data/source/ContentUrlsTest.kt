@@ -24,10 +24,20 @@ class ContentUrlsTest {
     }
 
     @Test
-    fun `channel url follows the source`() {
-        assertThat(channelUrl(ContentId("dQw4w9WgXcQ"), "UC123"))
-            .isEqualTo("https://www.youtube.com/channel/UC123")
-        assertThat(channelUrl(ContentId.peerTube("framatube.org", "x"), "news"))
-            .isEqualTo("https://framatube.org/c/news")
+    fun `federated channel url points at the originating instance`() {
+        val channel = ContentId.peerTube("framatube.org", "news")
+
+        assertThat(federatedChannelUrl(channel)).isEqualTo("https://framatube.org/c/news")
+    }
+
+    @Test
+    fun `youTube and local channels have no federated url`() {
+        assertThat(federatedChannelUrl(ContentId("UC123"))).isNull()
+        assertThat(federatedChannelUrl(ContentId("local_5"))).isNull()
+    }
+
+    @Test
+    fun `a malformed federated channel id yields null rather than a broken host`() {
+        assertThat(federatedChannelUrl(ContentId("peertube_"))).isNull()
     }
 }

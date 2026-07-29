@@ -72,7 +72,9 @@ import io.github.aedev.flow.data.local.VideoHistoryEntry
 import io.github.aedev.flow.data.model.Video
 import io.github.aedev.flow.data.model.VideoCollaborator
 import io.github.aedev.flow.data.repository.VideoCollaboratorResolver
+import io.github.aedev.flow.data.source.contentId
 import io.github.aedev.flow.ui.components.ShortsCard
+import io.github.aedev.flow.ui.components.VideoSourceBadge
 import io.github.aedev.flow.ui.screens.music.MusicTrack
 import io.github.aedev.flow.ui.screens.music.MusicTrackRow
 import java.text.SimpleDateFormat
@@ -630,6 +632,15 @@ private fun HistoryVideoCard(
                 contentDescription = null,
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop
+            )
+
+            // History rows are VideoHistoryEntry, which has no source field — and the Room feed
+            // cache drops it anyway. The prefixed id survives everywhere, so derive from that.
+            VideoSourceBadge(
+                source = entry.videoId.contentId.kind,
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(4.dp)
             )
 
             if (entry.duration > 0) {
