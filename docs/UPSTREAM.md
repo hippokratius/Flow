@@ -38,7 +38,11 @@ TubeHub code lives in packages upstream will never create, so it can never confl
 - `io.github.aedev.flow.data.source.youtube` — adapter onto the existing `YouTubeRepository`
 - `io.github.aedev.flow.data.source.peertube` — PeerTube source
 - `io.github.aedev.flow.fediverse` — Misskey/ActivityPub interaction
-- `.github/workflows/tubehub-ci.yml`, `NOTICE.md`, `docs/UPSTREAM.md`
+- `io.github.aedev.flow.player.source` — playback for non-YouTube sources
+- `ui/components/VideoSourceBadge.kt`, `ui/screens/home/HomeFeedFederatedMerge.kt`,
+  `ui/screens/settings/PeerTubeInstancesScreen.kt`
+- `.github/workflows/tubehub-ci.yml`, `NOTICE.md`, `docs/UPSTREAM.md`, `res/xml/backup_rules.xml`,
+  `res/xml/data_extraction_rules.xml`
 
 Where an edit to an upstream file is unavoidable, it must be a **dispatch, not a rewrite**: one
 branch, one binding, one appended field. Anything larger belongs in a new file that the upstream
@@ -76,6 +80,15 @@ Keep this list short. If it grows, the seam has drifted.
 | `utils/ThumbnailUrlResolver.kt` | non-YouTube ids keep their raw thumbnail |
 | `ui/screens/settings/SettingsScreen.kt` | nav lambda, list row, search entry |
 | `ui/FlowNavigation.kt` | nav lambda and one `composable` route |
+| `ui/components/VideoCard.kt` | source badge in each of the four cards |
+| `ui/components/VideoPlayerComponents.kt` | instance name under the subscriber count |
+| `ui/screens/library/LibraryShelfCards.kt` | source badge |
+| `ui/screens/history/HistoryScreen.kt` | source badge, kind derived from the id |
+| `ui/NavigationDestinations.kt` | `youtubeChannelUrl` returns null for non-YouTube ids |
+| `ui/screens/player/content/VideoInfoContent.kt` | Fediverse action bar for federated videos |
+| `MainActivity.kt` | one early-return for the MiAuth callback |
+| `AndroidManifest.xml` | MiAuth intent filter, backup exclusion rules |
+| `app/build.gradle.kts`, `gradle/libs.versions.toml` | `androidx.browser` for Custom Tabs |
 
 ### Why those guards exist
 
