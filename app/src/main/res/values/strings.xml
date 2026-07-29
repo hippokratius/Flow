@@ -1,6 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!--
+        Unused by the app itself — see app_brand_name below — but it must stay declared: 23 locale
+        files translate this key, and removing the default would make every one of them an
+        "extra translation" lint error and break the Weblate sync with upstream.
+    -->
     <string name="app_name">TubeHub</string>
+    <!--
+        The product name, shown in the launcher, the about screen and media notifications.
+
+        A separate, untranslatable key rather than app_name: upstream Flow has app_name translated
+        in 23 locales, so on a non-English device those overrides win and the app would still be
+        called "Flow". Editing those files is forbidden by AGENTS.md and Weblate would revert it
+        anyway — and a brand name is not a translation in the first place.
+    -->
+    <string name="app_brand_name" translatable="false">TubeHub</string>
+    <!-- Same reasoning as app_brand_name; app_name_uppercase is translated in 18 locales. -->
+    <string name="app_brand_name_uppercase" translatable="false">TUBEHUB</string>
     <string name="subscriptions_search_placeholder">Search subscriptions...</string>
     <string name="subscriptions_sort_label">Sort channels</string>
     <string name="subscriptions_sort_default">Default</string>
@@ -590,6 +606,16 @@
     <string name="icon_name_flow_red">Flow Red</string>
     <string name="icon_name_flow_light">Flow Light</string>
     <string name="icon_name_flow_play">Flow Play</string>
+    <!--
+        Replacements for the three keys above, which name the upstream project and are translated in
+        13-15 locales each — so editing the defaults alone would leave "Flow Light" showing on most
+        devices. Same reasoning as app_brand_name: a new untranslatable key rather than touching
+        locale files, which AGENTS.md forbids and Weblate would revert. The originals stay declared
+        so their translations do not become extra-translation lint errors.
+    -->
+    <string name="icon_name_variant_dark" translatable="false">Dark</string>
+    <string name="icon_name_variant_light" translatable="false">Light</string>
+    <string name="icon_name_variant_plate" translatable="false">Plate</string>
     <string name="icon_name_amoled">AMOLED Dark</string>
     <string name="icon_name_monochrome">Monochrome</string>
     <string name="icon_name_ghost">Ghost</string>

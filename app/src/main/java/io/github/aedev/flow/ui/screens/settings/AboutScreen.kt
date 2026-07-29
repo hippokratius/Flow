@@ -151,7 +151,7 @@ fun AboutScreen(
                     )
                     Spacer(modifier = Modifier.height(16.dp))
                     Text(
-                        text = stringResource(id = R.string.app_name),
+                        text = stringResource(id = R.string.app_brand_name),
                         style = MaterialTheme.typography.headlineMedium.copy(
                             fontWeight = FontWeight.ExtraBold,
                             letterSpacing = 3.sp

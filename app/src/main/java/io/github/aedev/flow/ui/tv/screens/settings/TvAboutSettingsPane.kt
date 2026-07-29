@@ -177,7 +177,7 @@ private fun TvAboutIdentity() {
             )
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(
-                    text = stringResource(R.string.app_name),
+                    text = stringResource(R.string.app_brand_name),
                     style = MaterialTheme.typography.headlineMedium,
                 )
                 Text(

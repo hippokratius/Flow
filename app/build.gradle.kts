@@ -68,6 +68,17 @@ android {
     }
 
     signingConfigs {
+        // Fixed debug key, committed to the repo. Without this, Gradle falls back to
+        // ~/.android/debug.keystore, which is generated per machine — so every CI runner would sign
+        // with a different key and each artifact would refuse to install over the previous one.
+        // The values below are Android's own debug defaults and carry no security meaning.
+        getByName("debug") {
+            storeFile = file("debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+
         create("release") {
             val localProperties = Properties()
             val localPropertiesFile = rootProject.file("local.properties")

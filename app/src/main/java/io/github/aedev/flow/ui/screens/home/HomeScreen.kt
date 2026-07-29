@@ -195,7 +195,7 @@ fun HomeScreen(
                             )
                         }
                         Text(
-                            stringResource(R.string.app_name_uppercase),
+                            stringResource(R.string.app_brand_name_uppercase),
                             style = MaterialTheme.typography.titleLarge.copy(
                                 fontWeight = FontWeight.ExtraBold,
                                 letterSpacing = 1.sp

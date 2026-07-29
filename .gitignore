@@ -28,6 +28,11 @@ LibreTube-master
 local.properties
 *.keystore
 *.jks
+# ...except the debug key. It must be committed, not generated: Android's default debug keystore is
+# created per machine, so every CI runner would otherwise sign with a different key and each build
+# would refuse to install over the previous one. A debug key is not a secret — password and alias
+# are the Android defaults. The release keystore above stays ignored.
+!app/debug.keystore
 key.properties
 pipepipe
 graphify-out/
