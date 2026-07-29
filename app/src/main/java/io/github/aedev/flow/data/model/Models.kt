@@ -50,6 +50,7 @@ data class Channel(
     val isSubscribed: Boolean = false,
     val isMusic: Boolean = false,
     val url: String = "", // Full channel URL for navigation
+    val bannerUrl: String = "",
     val source: SourceKind = SourceKind.YOUTUBE,
     val instanceHost: String? = null
 )

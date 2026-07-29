@@ -39,8 +39,10 @@ TubeHub code lives in packages upstream will never create, so it can never confl
 - `io.github.aedev.flow.data.source.peertube` — PeerTube source
 - `io.github.aedev.flow.fediverse` — Misskey/ActivityPub interaction
 - `io.github.aedev.flow.player.source` — playback for non-YouTube sources
+- `ui/screens/channel/peertube` — the PeerTube channel page
 - `ui/components/VideoSourceBadge.kt`, `ui/screens/home/HomeFeedFederatedMerge.kt`,
-  `ui/screens/settings/PeerTubeInstancesScreen.kt`
+  `ui/screens/settings/PeerTubeInstancesScreen.kt`,
+  `ui/screens/subscriptions/FederatedSubscriptionFeed.kt`
 - `.github/workflows/tubehub-ci.yml`, `NOTICE.md`, `docs/UPSTREAM.md`, `res/xml/backup_rules.xml`,
   `res/xml/data_extraction_rules.xml`
 
@@ -72,7 +74,7 @@ Keep this list short. If it grows, the seam has drifted.
 | `settings.gradle.kts` | `rootProject.name` |
 | `README.md` | fork attribution banner |
 | `app/src/main/res/values/strings.xml` | `app_name`, `app_name_uppercase`, appended TubeHub strings |
-| `data/model/Models.kt` | two defaulted fields each on `Video` and `Channel` |
+| `data/model/Models.kt` | two defaulted fields on `Video`, three on `Channel` |
 | `data/local/entity/VideoEntity.kt` | recompute `source`/`instanceHost` in `toDomain()` |
 | `ui/screens/home/HomeViewModel.kt` | registry parameter, one `async` lane, two merge calls, three source guards |
 | `ui/screens/player/VideoPlayerViewModel.kt` | dispatch branch for federated ids, history thumbnail guard |
@@ -84,7 +86,10 @@ Keep this list short. If it grows, the seam has drifted.
 | `ui/components/VideoPlayerComponents.kt` | instance name under the subscriber count |
 | `ui/screens/library/LibraryShelfCards.kt` | source badge |
 | `ui/screens/history/HistoryScreen.kt` | source badge, kind derived from the id |
-| `ui/NavigationDestinations.kt` | `youtubeChannelUrl` returns null for non-YouTube ids |
+| `ui/NavigationDestinations.kt` | `youtubeChannelUrl` returns null for non-YouTube ids; PeerTube channel route |
+| `ui/ChannelNavigation.kt` | one dispatch branch to the PeerTube channel page |
+| `ui/screens/subscriptions/SubscriptionsViewModel.kt` | federated lane beside the RSS lane |
+| `notification/SubscriptionCheckWorker.kt` | federated ids skipped, not polled against YouTube RSS |
 | `ui/screens/player/content/VideoInfoContent.kt` | Fediverse action bar for federated videos |
 | `MainActivity.kt` | one early-return for the MiAuth callback |
 | `AndroidManifest.xml` | MiAuth intent filter, backup exclusion rules |
@@ -117,6 +122,28 @@ drawables — launcher variants, splash screens, the playback notification and t
 the app identified itself as Flow at every start. All now carry a plain play glyph. The
 `activity-alias` entries and the icon picker are untouched: swapping the glyph covers every variant
 at once and leaves no dead UI.
+
+### Why the PeerTube channel page is its own screen
+
+`ChannelScreen.kt` is 1374 lines and `ChannelUiState` holds a raw NewPipe `ChannelInfo`, which
+`ChannelHeader` and `AboutSection` are typed on. Four of its six tabs — Shorts, Live, Posts and
+in-channel search — have no PeerTube equivalent. Rewriting it for two sources would be the single
+most expensive edit in the fork; instead `ui/screens/channel/peertube` reuses the parts that are
+already source-neutral (`ChannelBanner`, the public `SubscribeButton`, the `VideoCard*` family,
+`ChannelRequestErrorState`) and the upstream file is untouched.
+
+Reaching it costs one branch in `ChannelNavigation.kt`, because `navigateToYoutubeChannel` is the
+single funnel all eight call sites in `FlowNavigation.kt` already go through. Its YouTube-specific
+name is kept for exactly that reason.
+
+### Why subscribing had to touch two more files
+
+`SubscriptionRepository` stores any id, but both consumers assumed YouTube: the feed goes through
+`RssSubscriptionService` (YouTube's RSS endpoint) and `SubscriptionCheckWorker` polls
+`youtube.com/feeds/videos.xml?channel_id=` every six hours. A subscribed PeerTube channel would have
+been invisible in the feed and a guaranteed 404 in the worker — a subscribe button that does nothing
+is worse than none, so the feed gained a federated lane and the worker skips non-YouTube ids.
+Upload notifications for PeerTube channels stay off rather than silently never firing.
 
 ### Why those guards exist
 

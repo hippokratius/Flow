@@ -13,6 +13,7 @@ import io.github.aedev.flow.data.local.dao.SubscriptionGroupDao
 import io.github.aedev.flow.data.local.entity.SubscriptionGroupEntity
 import io.github.aedev.flow.data.model.Channel
 import io.github.aedev.flow.data.model.Video
+import io.github.aedev.flow.data.source.contentSourceRegistry
 import io.github.aedev.flow.data.repository.YouTubeRepository
 import io.github.aedev.flow.innertube.YouTube
 import io.github.aedev.flow.innertube.models.YouTubeClient
@@ -57,6 +58,7 @@ class SubscriptionsViewModel : ViewModel() {
     }
 
     private lateinit var subscriptionRepository: SubscriptionRepository
+    private lateinit var appContext: Context
     private lateinit var viewHistory: ViewHistory
     
     private val _uiState = MutableStateFlow(SubscriptionsUiState())
@@ -88,6 +90,7 @@ class SubscriptionsViewModel : ViewModel() {
         if (isInitialized) return
         isInitialized = true
 
+        appContext = context.applicationContext
         subscriptionRepository = SubscriptionRepository.getInstance(context)
         playerPreferences = PlayerPreferences(context)
         viewHistory = ViewHistory.getInstance(context)
@@ -342,9 +345,15 @@ class SubscriptionsViewModel : ViewModel() {
                 now = System.currentTimeMillis()
             )
             val cachedVideoIds = if (replaceCache) emptySet() else cachedBeforeFetch.map { it.id }.toHashSet()
-            var finalVideos: List<Video> = emptyList()
+            // Federated channels have no YouTube RSS feed. They are fetched once, up front, and
+            // folded into every emit so the feed stays one sorted list rather than two.
+            val federatedVideos = fetchFederatedSubscriptionUploads(
+                registry = contentSourceRegistry(appContext),
+                channelIds = channelIds
+            )
+            var finalVideos: List<Video> = federatedVideos
             io.github.aedev.flow.data.innertube.RssSubscriptionService.fetchSubscriptionVideos(
-                channelIds = channelIds,
+                channelIds = youtubeSubscriptionChannelIds(channelIds),
                 maxTotal = MAX_SUBSCRIPTION_CACHE_ITEMS,
                 knownVideoIds = cachedVideoIds,
                 onProgress = { processed, total ->
@@ -358,9 +367,9 @@ class SubscriptionsViewModel : ViewModel() {
             ).collect { videos ->
                 Log.i(TAG, "Network emit received: ${videos.size} videos (shorts=${videos.count { it.isShort }}, regular=${videos.count { !it.isShort }})")
                 if (videos.isNotEmpty()) {
-                    finalVideos = videos
+                    finalVideos = videos + federatedVideos
                     val previewVideos = mergeSubscriptionFeed(
-                        freshVideos = videos,
+                        freshVideos = finalVideos,
                         cachedVideos = refreshPreviewVideos,
                         now = System.currentTimeMillis()
                     ).withHighQualityThumbnails().withSubscriptionAvatars()

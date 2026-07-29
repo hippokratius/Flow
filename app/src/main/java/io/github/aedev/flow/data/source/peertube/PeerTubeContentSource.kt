@@ -9,6 +9,7 @@
  */
 package io.github.aedev.flow.data.source.peertube
 
+import io.github.aedev.flow.data.model.Channel
 import io.github.aedev.flow.data.model.SearchFilter
 import io.github.aedev.flow.data.model.Video
 import io.github.aedev.flow.data.source.ContentId
@@ -71,6 +72,48 @@ class PeerTubeContentSource @Inject constructor(
             streamingPlaylists = detail.streamingPlaylists,
             files = detail.files,
         ).toVideo(instance)
+    }
+
+    override suspend fun channel(id: ContentId): Channel? {
+        val host = id.instanceHost ?: return null
+        val instance = instanceFor(host)
+        val handle = id.nativeId.takeIf { it.isNotBlank() } ?: return null
+        return runCatching { api.channelDetail(instance.url, handle) }.getOrNull()
+            ?.toChannel(instance)
+    }
+
+    override suspend fun channelUploads(id: ContentId, cursor: SourceCursor?): SourcePage<Video> {
+        val host = id.instanceHost ?: return SourcePage(emptyList(), null)
+        val handle = id.nativeId.takeIf { it.isNotBlank() }
+            ?: return SourcePage(emptyList(), null)
+        val instance = instanceFor(host)
+        val start = cursor.offset()
+
+        val page = runCatching {
+            api.channelVideos(instance.url, handle, count = CHANNEL_PAGE_SIZE, start = start)
+        }.getOrElse { failure ->
+            return SourcePage(
+                items = emptyList(),
+                next = null,
+                errors = listOf(
+                    SourceError(
+                        sourceKey = key,
+                        instanceHost = host,
+                        message = failure.message ?: failure::class.java.simpleName,
+                    )
+                ),
+            )
+        }
+
+        val videos = page.data.map { it.toVideo(instance) }
+        return SourcePage(
+            items = videos,
+            // A short page is the end of the channel. PeerTube reports a `total`, but instances
+            // disagree on whether it counts videos the caller may actually see, so the page size is
+            // the more reliable signal.
+            next = SourceCursor.Offset(start + CHANNEL_PAGE_SIZE)
+                .takeIf { videos.size >= CHANNEL_PAGE_SIZE },
+        )
     }
 
     override suspend fun resolvePlayback(id: ContentId): PlaybackSpec? {
@@ -155,10 +198,11 @@ class PeerTubeContentSource @Inject constructor(
 
     private fun SourceCursor?.offset(): Int = (this as? SourceCursor.Offset)?.start ?: 0
 
-    private companion object {
+    internal companion object {
         const val PER_INSTANCE_SLACK = 4
         const val MIN_PER_INSTANCE = 6
         const val MAX_PER_INSTANCE = 25
         const val DEFAULT_SEARCH_LIMIT = 20
+        const val CHANNEL_PAGE_SIZE = 20
     }
 }

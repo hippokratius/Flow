@@ -74,6 +74,29 @@ data class PTResolutionDto(
     val id: Int = 0,
 )
 
+/**
+ * Channel detail response of `GET /api/v1/video-channels/{handle}`.
+ *
+ * Also used for `GET /api/v1/accounts/{handle}`: an account response carries the same fields minus
+ * the banners, and every field here is optional, so one type covers both. That matters because a
+ * federated reference can point at either actor — see [PeerTubeApi.channelDetail].
+ */
+@Serializable
+data class PTChannelDetailDto(
+    /** Local part of the handle, without the host. */
+    val name: String = "",
+    val displayName: String = "",
+    /** Origin host of the actor, which differs from the queried instance for mirrored channels. */
+    val host: String = "",
+    val description: String? = null,
+    val followersCount: Long = 0,
+    val url: String? = null,
+    val avatar: PTAvatarDto? = null,
+    val avatars: List<PTAvatarDto> = emptyList(),
+    val banner: PTAvatarDto? = null,
+    val banners: List<PTAvatarDto> = emptyList(),
+)
+
 /** Single-video detail response, used to resolve stream URLs lazily. */
 @Serializable
 data class PTVideoDetailDto(

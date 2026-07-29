@@ -2476,4 +2476,8 @@
     <string name="fediverse_error_invalid_response">The instance sent an unexpected response.</string>
     <string name="fediverse_error_unresolvable">This video is not known to your instance yet.</string>
     <string name="fediverse_error_no_browser">No browser is available to complete sign-in.</string>
+
+    <string name="peertube_channel_error">This channel could not be loaded.</string>
+    <string name="peertube_channel_instance">on %1$s</string>
+    <string name="peertube_channel_subscribers">%1$s subscribers</string>
 </resources>

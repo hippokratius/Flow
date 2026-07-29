@@ -48,6 +48,7 @@ import io.github.aedev.flow.ui.screens.personality.FlowPersonalityScreen
 import io.github.aedev.flow.ui.screens.shorts.ShortsScreen
 import io.github.aedev.flow.ui.screens.subscriptions.SubscriptionsScreen
 import io.github.aedev.flow.ui.screens.channel.ChannelScreen
+import io.github.aedev.flow.ui.screens.channel.peertube.PeerTubeChannelScreen
 import io.github.aedev.flow.ui.screens.onboarding.OnboardingScreen
 import io.github.aedev.flow.ui.theme.CustomThemePalettes
 import io.github.aedev.flow.ui.theme.ThemeMode
@@ -622,6 +623,24 @@ fun NavGraphBuilder.flowAppGraph(
             onPlaylistClick = { playlistId ->
                 navController.navigate("playlist/$playlistId")
             },
+            onBackClick = { navController.popBackStack() }
+        )
+    }
+
+    // PeerTube channel page — a federated channel has no YouTube URL, so it is addressed by id.
+    composable(
+        route = PEERTUBE_CHANNEL_ROUTE,
+        arguments = listOf(navArgument("channelId") { type = NavType.StringType })
+    ) { backStackEntry ->
+        currentRoute.value = "peertubeChannel"
+        showBottomNav.value = false
+        val peerTubeChannelId = backStackEntry.arguments?.getString("channelId")?.let {
+            java.net.URLDecoder.decode(it, "UTF-8")
+        } ?: ""
+
+        PeerTubeChannelScreen(
+            channelId = peerTubeChannelId,
+            onVideoClick = { video -> navController.navigate("player/${video.id}") },
             onBackClick = { navController.popBackStack() }
         )
     }

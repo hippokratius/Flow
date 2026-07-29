@@ -65,6 +65,22 @@ internal fun youtubeChannelUrl(channelIdOrHandle: String): String? {
     }
 }
 
+/** Route pattern of the PeerTube channel page. Declared here so the arg name has one owner. */
+internal const val PEERTUBE_CHANNEL_ROUTE = "peertubeChannel?id={channelId}"
+
+/**
+ * In-app route to a PeerTube channel, or null when the id belongs to another source.
+ *
+ * Kept pure — no `android.net.Uri`, no `NavController` — so the dispatch in
+ * [navigateToYoutubeChannel] is unit testable.
+ */
+internal fun peerTubeChannelRoute(channelId: String): String? {
+    val id = channelId.trim().contentId
+    if (id.kind != SourceKind.PEERTUBE) return null
+    if (id.instanceHost.isNullOrBlank() || id.nativeId.isBlank()) return null
+    return "peertubeChannel?id=${URLEncoder.encode(id.raw, Charsets.UTF_8.name())}"
+}
+
 internal fun youtubeChannelRoute(channelIdOrHandle: String): String? =
     youtubeChannelUrl(channelIdOrHandle)?.let { channelUrl ->
         "channel?url=${URLEncoder.encode(channelUrl, Charsets.UTF_8.name())}"

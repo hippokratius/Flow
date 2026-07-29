@@ -76,13 +76,24 @@ class PeerTubeApi @Inject constructor(
         instanceUrl: String,
         channelName: String,
         count: Int,
+        start: Int = 0,
     ): PTVideoListDto {
         val name = URLEncoder.encode(channelName, "UTF-8")
-        val query = "/videos?count=$count&sort=-publishedAt&nsfw=false"
+        val query = "/videos?count=$count&start=$start&sort=-publishedAt&nsfw=false"
         return runCatching {
             get<PTVideoListDto>("$instanceUrl/api/v1/video-channels/$name$query")
         }.getOrElse {
             get("$instanceUrl/api/v1/accounts/$name$query")
+        }
+    }
+
+    /** Name, description, follower count and artwork of a channel. Same actor fallback as above. */
+    suspend fun channelDetail(instanceUrl: String, channelName: String): PTChannelDetailDto {
+        val name = URLEncoder.encode(channelName, "UTF-8")
+        return runCatching {
+            get<PTChannelDetailDto>("$instanceUrl/api/v1/video-channels/$name")
+        }.getOrElse {
+            get("$instanceUrl/api/v1/accounts/$name")
         }
     }
 
