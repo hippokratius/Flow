@@ -2428,4 +2428,26 @@
     <string name="peertube_instance_remove">Remove instance</string>
     <string name="source_badge_youtube">From YouTube</string>
     <string name="source_badge_peertube">From PeerTube</string>
+
+    <!-- Fediverse -->
+    <string name="fediverse_section_title">Fediverse account</string>
+    <string name="fediverse_section_description">Connect a Misskey account to like, boost and comment on PeerTube videos. Your access token stays encrypted on this device.</string>
+    <string name="fediverse_instance_label">Misskey instance</string>
+    <string name="fediverse_instance_placeholder">misskey.example</string>
+    <string name="fediverse_connect">Connect account</string>
+    <string name="fediverse_disconnect">Disconnect</string>
+    <string name="fediverse_no_account">No account connected.</string>
+    <string name="fediverse_connected_as">Connected as %1$s</string>
+    <string name="fediverse_acting_as">Acting as %1$s</string>
+    <string name="fediverse_action_like">Like</string>
+    <string name="fediverse_action_boost">Boost</string>
+    <string name="fediverse_action_comment">Send comment</string>
+    <string name="fediverse_action_with_count">%1$s · %2$d</string>
+    <string name="fediverse_comment_label">Write a comment</string>
+    <string name="fediverse_error_generic">The action could not be completed.</string>
+    <string name="fediverse_error_http">The instance returned an error (%1$d).</string>
+    <string name="fediverse_error_authorization_declined">Authorization was declined or has expired.</string>
+    <string name="fediverse_error_invalid_response">The instance sent an unexpected response.</string>
+    <string name="fediverse_error_unresolvable">This video is not known to your instance yet.</string>
+    <string name="fediverse_error_no_browser">No browser is available to complete sign-in.</string>
 </resources>

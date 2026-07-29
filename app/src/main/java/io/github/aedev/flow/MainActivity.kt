@@ -64,6 +64,9 @@ import io.github.aedev.flow.discord.DiscordPresenceRuntime
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
+    @javax.inject.Inject
+    lateinit var miAuthDeepLinkHandler: io.github.aedev.flow.fediverse.MiAuthDeepLinkHandler
+
     private val _deeplinkVideoId = mutableStateOf<String?>(null)
     val deeplinkVideoId: State<String?> = _deeplinkVideoId
     
@@ -472,6 +475,9 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handleIntent(intent: Intent) {
+        // A MiAuth callback is not a video link; taking it here keeps the rest of this method from
+        // trying to read a video id out of it.
+        if (miAuthDeepLinkHandler.consume(intent, lifecycleScope)) return
         val data = intent.data
         val notificationVideoId = intent.getStringExtra("notification_video_id") ?: intent.getStringExtra("video_id")
 

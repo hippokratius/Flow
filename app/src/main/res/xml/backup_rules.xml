@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Android 11 and below (android:fullBackupContent).
+
+    The fork's own preference store holds a Fediverse API token, which is a write credential able to
+    post and follow as the user. Auto Backup would copy it off the device, so it is excluded here.
+    The token is additionally encrypted at rest by TokenVault; this rule keeps it from leaving the
+    device in the first place.
+-->
+<full-backup-content>
+    <exclude domain="file" path="datastore/tubehub_preferences.preferences_pb" />
+</full-backup-content>

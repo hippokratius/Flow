@@ -14,7 +14,7 @@ import android.util.Log
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import dagger.hilt.android.qualifiers.ApplicationContext
-import io.github.aedev.flow.data.local.safePreferencesDataStore
+import io.github.aedev.flow.data.source.tubeHubPreferencesDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -82,5 +82,3 @@ class PeerTubePreferences @Inject constructor(
         val instanceListSerializer = ListSerializer(PeerTubeInstance.serializer())
     }
 }
-
-private val Context.tubeHubPreferencesDataStore by safePreferencesDataStore(name = "tubehub_preferences")

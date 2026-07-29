@@ -257,6 +257,9 @@ dependencies {
     ksp(libs.androidx.room.compiler)
     
     implementation(libs.androidx.datastore.preferences)
+
+    // Custom Tabs, for the MiAuth sign-in round trip through the user's browser.
+    implementation(libs.androidx.browser)
     // implementation(libs.androidx.datastore) // In TOML if needed
 
     // --- Home-screen widgets (Jetpack Glance) ---

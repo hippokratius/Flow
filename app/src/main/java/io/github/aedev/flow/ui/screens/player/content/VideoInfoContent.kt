@@ -34,6 +34,7 @@ import io.github.aedev.flow.player.error.PlayerDiagnostics
 import io.github.aedev.flow.data.local.PlayerPreferences
 import io.github.aedev.flow.data.local.PlayerRelatedCardStyle
 import io.github.aedev.flow.data.model.Video
+import io.github.aedev.flow.data.source.contentId
 import io.github.aedev.flow.data.repository.VideoCollaboratorResolver
 import io.github.aedev.flow.player.EnhancedPlayerManager
 import io.github.aedev.flow.ui.components.rememberDeArrowResult
@@ -357,6 +358,14 @@ fun VideoInfoContent(
         },
         onDescriptionClick = { screenState.showDescriptionSheet = true }
     )
+
+    // Fediverse actions for federated videos. A sibling of VideoInfoSection rather than more
+    // parameters on it — that composable already takes 25. Renders nothing without an account.
+    if (video.source == io.github.aedev.flow.data.source.SourceKind.PEERTUBE) {
+        io.github.aedev.flow.fediverse.ui.FediverseActionBar(
+            apUrl = io.github.aedev.flow.data.source.watchUrl(video.id.contentId)
+        )
+    }
 
     if (uiState.isLiveChatAvailable) {
         io.github.aedev.flow.ui.components.LiveChatPreview(
