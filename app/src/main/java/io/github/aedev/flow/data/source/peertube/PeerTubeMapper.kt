@@ -10,6 +10,7 @@
 package io.github.aedev.flow.data.source.peertube
 
 import io.github.aedev.flow.data.model.Channel
+import io.github.aedev.flow.data.model.Comment
 import io.github.aedev.flow.data.model.Video
 import io.github.aedev.flow.data.source.ContentId
 import io.github.aedev.flow.data.source.SourceKind
@@ -123,6 +124,58 @@ fun PTChannelDetailDto.toDiscoveredChannel(answeringUrl: String): Channel? {
         instanceHost = id.instanceHost,
     )
 }
+
+/**
+ * Maps a PeerTube comment onto Flow's domain model, so the existing comment UI renders it unchanged.
+ *
+ * Two deliberate flattenings:
+ *
+ * `replyCount` is reported as 0 even when the thread has replies. The reply expander in the comment
+ * list drives off `repliesPage`, a NewPipe type this source cannot produce, so a non-zero count would
+ * render a control that does nothing. Fetching replies needs one request per thread against
+ * `/comment-threads/{threadId}` — worth doing, but not silently at the cost of N requests per video.
+ *
+ * The text arrives as HTML. It is reduced to plain text here rather than in the UI, because the UI is
+ * shared with YouTube comments, which are already plain.
+ */
+fun PTCommentDto.toComment(instanceUrl: String): Comment? {
+    if (isDeleted) return null
+    val body = text.htmlToPlainText()
+    if (body.isBlank()) return null
+
+    return Comment(
+        id = id.toString(),
+        author = account?.displayName?.takeIf { it.isNotBlank() }
+            ?: account?.name.orEmpty(),
+        authorThumbnail = account?.avatars?.pickWidest(account.avatar, instanceUrl).orEmpty(),
+        text = body,
+        // PeerTube has no comment likes.
+        likeCount = 0,
+        publishedTime = createdAt.orEmpty(),
+        replyCount = 0,
+    )
+}
+
+/**
+ * The visible text of a fragment of PeerTube comment HTML.
+ *
+ * Deliberately small: PeerTube sanitises comment HTML down to links, line breaks and basic emphasis,
+ * so a tag stripper plus the handful of entities that survive is enough. Pulling in a parser for this
+ * would be a dependency for one field.
+ */
+internal fun String.htmlToPlainText(): String =
+    replace(Regex("<br\\s*/?>", RegexOption.IGNORE_CASE), "\n")
+        .replace(Regex("</p\\s*>", RegexOption.IGNORE_CASE), "\n")
+        .replace(Regex("<[^>]*>"), "")
+        .replace("&nbsp;", " ")
+        .replace("&amp;", "&")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&#39;", "'")
+        .lines()
+        .joinToString("\n") { it.trim() }
+        .trim()
 
 /**
  * The handle this channel is addressed by *on [instanceHost]*.

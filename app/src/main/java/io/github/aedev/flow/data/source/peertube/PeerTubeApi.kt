@@ -117,6 +117,15 @@ class PeerTubeApi @Inject constructor(
     suspend fun videoDetail(instanceUrl: String, uuid: String): PTVideoDetailDto =
         get("$instanceUrl/api/v1/videos/$uuid")
 
+    /**
+     * Top-level comments on a video.
+     *
+     * Threads only. Replies live behind `/comment-threads/{threadId}`, one request per thread, which
+     * is why they are not fetched here — see the note in [toComment] about what that costs.
+     */
+    suspend fun comments(instanceUrl: String, uuid: String, count: Int = 30): PTCommentListDto =
+        get("$instanceUrl/api/v1/videos/$uuid/comment-threads?count=$count")
+
     private suspend inline fun <reified T> get(url: String): T = withContext(Dispatchers.IO) {
         val request = Request.Builder().url(url).header("Accept", "application/json").build()
         client.newCall(request).execute().use { response ->

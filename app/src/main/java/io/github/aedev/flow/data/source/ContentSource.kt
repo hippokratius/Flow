@@ -10,6 +10,7 @@
 package io.github.aedev.flow.data.source
 
 import io.github.aedev.flow.data.model.Channel
+import io.github.aedev.flow.data.model.Comment
 import io.github.aedev.flow.data.model.SearchFilter
 import io.github.aedev.flow.data.model.Video
 
@@ -54,6 +55,15 @@ interface ContentSource {
 
     suspend fun channelUploads(id: ContentId, cursor: SourceCursor? = null): SourcePage<Video> =
         SourcePage(emptyList(), null)
+
+    /**
+     * Comments on a video.
+     *
+     * Empty by default, and YouTube deliberately does not implement it: its comment path is paged
+     * through NewPipe `Page` tokens that the player already threads through `loadMoreComments`, and
+     * flattening that behind a one-shot list would lose the paging.
+     */
+    suspend fun comments(id: ContentId): List<Comment> = emptyList()
 
     /**
      * Everything the player needs to build a MediaSource, or null when this source hands playback

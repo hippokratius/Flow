@@ -10,6 +10,7 @@
 package io.github.aedev.flow.data.source.peertube
 
 import io.github.aedev.flow.data.model.Channel
+import io.github.aedev.flow.data.model.Comment
 import io.github.aedev.flow.data.model.SearchFilter
 import io.github.aedev.flow.data.model.Video
 import io.github.aedev.flow.data.source.ContentId
@@ -163,6 +164,18 @@ class PeerTubeContentSource @Inject constructor(
             next = SourceCursor.Offset(start + CHANNEL_PAGE_SIZE)
                 .takeIf { videos.size >= CHANNEL_PAGE_SIZE },
         )
+    }
+
+    /**
+     * Top-level comments. Empty rather than an error when the instance has comments switched off,
+     * which is a per-instance setting and perfectly normal.
+     */
+    override suspend fun comments(id: ContentId): List<Comment> {
+        val host = id.instanceHost ?: return emptyList()
+        val instance = instanceFor(host)
+        val response = runCatching { api.comments(instance.url, id.nativeId) }.getOrNull()
+            ?: return emptyList()
+        return response.data.mapNotNull { it.toComment(instance.url) }
     }
 
     override suspend fun resolvePlayback(id: ContentId): PlaybackSpec? {

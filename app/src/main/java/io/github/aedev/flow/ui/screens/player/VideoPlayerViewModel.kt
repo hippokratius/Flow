@@ -92,7 +92,8 @@ class VideoPlayerViewModel @Inject constructor(
     private val videoDownloadManager: VideoDownloadManager,
     private val sponsorBlockRepository: SponsorBlockRepository,
     private val liveChatRepository: io.github.aedev.flow.data.repository.LiveChatRepository,
-    private val externalSourcePlaybackLoader: io.github.aedev.flow.player.source.ExternalSourcePlaybackLoader
+    private val externalSourcePlaybackLoader: io.github.aedev.flow.player.source.ExternalSourcePlaybackLoader,
+    private val contentSourceRegistry: io.github.aedev.flow.data.source.ContentSourceRegistry
 ) : ViewModel() {
     
     private val _uiState = MutableStateFlow(VideoPlayerUiState())
@@ -3029,7 +3030,15 @@ class VideoPlayerViewModel @Inject constructor(
                     }
                 }
                 if (_uiState.value.cachedVideo?.id != videoId) return@launch
-                val (comments, nextPage) = repository.getComments(videoId)
+                // A federated video's comments live on its instance. Before this, the YouTube
+                // extractor was handed a `peertube_…` id, failed, and the video simply had no
+                // comments — with the failure only in the log.
+                val federatedId = videoId.contentId.takeIf { it.kind == SourceKind.PEERTUBE }
+                val (comments, nextPage) = if (federatedId != null) {
+                    contentSourceRegistry.forId(federatedId)?.comments(federatedId).orEmpty() to null
+                } else {
+                    repository.getComments(videoId)
+                }
                 if (_uiState.value.cachedVideo?.id != videoId) return@launch
                 _commentsState.value = comments.distinctByNonBlankKey(Comment::id)
                 commentsNextPage = nextPage

@@ -97,6 +97,34 @@ data class PTChannelDetailDto(
     val banners: List<PTAvatarDto> = emptyList(),
 )
 
+/** Comment threads of `GET /api/v1/videos/{id}/comment-threads`. */
+@Serializable
+data class PTCommentListDto(
+    val total: Int = 0,
+    val data: List<PTCommentDto> = emptyList(),
+)
+
+@Serializable
+data class PTCommentDto(
+    val id: Long = 0,
+    /** HTML, as PeerTube stores it. */
+    val text: String = "",
+    val createdAt: String? = null,
+    val totalReplies: Int = 0,
+    val isDeleted: Boolean = false,
+    val account: PTAccountDto? = null,
+)
+
+@Serializable
+data class PTAccountDto(
+    val name: String = "",
+    val displayName: String = "",
+    val host: String = "",
+    val url: String? = null,
+    val avatar: PTAvatarDto? = null,
+    val avatars: List<PTAvatarDto> = emptyList(),
+)
+
 /** Channel search response of `GET /api/v1/search/video-channels`. */
 @Serializable
 data class PTChannelListDto(
