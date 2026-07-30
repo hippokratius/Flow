@@ -65,7 +65,7 @@ class HeaderLogoPathTest {
             File("app/src/main/res/$relativePath"),
         )
         val file = candidates.firstOrNull(File::exists)
-        assertThat(file).isNotNull()
-        return file!!.readText()
+            ?: error("Resource not found: $relativePath (working dir ${File(".").absolutePath})")
+        return file.readText()
     }
 }

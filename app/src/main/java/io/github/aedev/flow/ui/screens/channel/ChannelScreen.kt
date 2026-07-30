@@ -207,6 +207,12 @@ fun ChannelScreen(
                         onSubscribeClick = { viewModel.toggleSubscription() },
                         onUnsubscribeClick = { viewModel.unsubscribe() },
                         onNotificationChange = { viewModel.setNotificationState(it) },
+                        onLinkChannel = {
+                            onLinkChannel(
+                                uiState.channelId.orEmpty(),
+                                uiState.channelInfo?.name.orEmpty()
+                            )
+                        },
                         onTabSelected = { viewModel.selectTab(it) },
                         onSearchToggle = { viewModel.setSearchActive(!uiState.searchActive) },
                         onSearchQueryChange = { viewModel.searchInChannel(it) },
@@ -282,7 +288,8 @@ private fun ChannelContent(
     initialScrollIndex: Int = 0,
     initialScrollOffset: Int = 0,
     onScrollChanged: (index: Int, offset: Int) -> Unit = { _, _ -> },
-    onCollapsedTitleVisibilityChange: (Boolean) -> Unit = {}
+    onCollapsedTitleVisibilityChange: (Boolean) -> Unit = {},
+    onLinkChannel: () -> Unit = {}
 ) {
     val channelInfo = uiState.channelInfo ?: return
 
@@ -642,7 +649,7 @@ private fun ChannelContent(
                     // navigateToYoutubeChannel already dispatches a federated id to its own page,
                     // so the existing callback carries the link target unchanged.
                     onOpenLinkedChannel = onChannelClick,
-                    onLinkChannel = { onLinkChannel(uiState.channelId.orEmpty(), channelInfo.name) }
+                    onLinkChannel = onLinkChannel
                 )
             }
 
