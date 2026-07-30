@@ -20,7 +20,7 @@ internal fun NavHostController.navigateToYoutubeChannel(channelIdOrHandle: Strin
 
     val targetUrl = youtubeChannelUrl(channelIdOrHandle) ?: return
     val currentUrl = currentBackStackEntry
-        ?.takeIf { it.destination.route == "channel?url={channelUrl}" }
+        ?.takeIf { it.destination.route == YOUTUBE_CHANNEL_ROUTE }
         ?.arguments
         ?.getString("channelUrl")
         ?.let(::decodeNavArgument)

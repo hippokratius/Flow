@@ -65,6 +65,14 @@ internal fun youtubeChannelUrl(channelIdOrHandle: String): String? {
     }
 }
 
+/**
+ * Route pattern of the YouTube channel page.
+ *
+ * `plain` forces the untouched YouTube page for a channel that has a PeerTube counterpart, which is
+ * how the shared page offers "watch on YouTube only" without bouncing straight back.
+ */
+internal const val YOUTUBE_CHANNEL_ROUTE = "channel?url={channelUrl}&plain={plain}"
+
 /** Route pattern of the channel-links settings screen. Both arguments are optional. */
 internal const val CHANNEL_LINKS_ROUTE =
     "settings/channel_links?youtubeId={youtubeId}&youtubeName={youtubeName}"
@@ -82,6 +90,20 @@ internal fun channelLinksRoute(
     val encode = { value: String -> URLEncoder.encode(value.trim(), Charsets.UTF_8.name()) }
     return "settings/channel_links?youtubeId=${encode(youtubeChannelId)}" +
         "&youtubeName=${encode(youtubeChannelName)}"
+}
+
+/**
+ * The `UC…` id inside a YouTube channel URL, or null when the URL addresses the channel some other
+ * way.
+ *
+ * Used to ask whether a channel has a linked counterpart, which is keyed on the id. A `@handle` URL
+ * carries no id, so those channels are simply not gated — the same behaviour as before links existed.
+ */
+internal fun youtubeChannelIdFromUrl(url: String): String? {
+    val uri = runCatching { URI(url.trim()) }.getOrNull() ?: return null
+    val segments = uri.path.orEmpty().split('/').filter(String::isNotBlank)
+    if (segments.size < 2 || segments.first() != "channel") return null
+    return segments[1].takeIf { it.isNotBlank() }
 }
 
 /** Route pattern of the PeerTube channel page. Declared here so the arg name has one owner. */

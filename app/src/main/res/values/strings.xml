@@ -2506,6 +2506,9 @@
     <string name="channel_link_open">Open</string>
     <string name="channel_link_add">Link a PeerTube channel</string>
 
+    <string name="linked_channel_both_sources">YouTube and PeerTube combined</string>
+    <string name="linked_channel_youtube_only">Watch on YouTube only</string>
+
     <string name="peertube_channel_error">This channel could not be loaded.</string>
     <string name="peertube_channel_instance">on %1$s</string>
     <string name="peertube_channel_subscribers">%1$s subscribers</string>

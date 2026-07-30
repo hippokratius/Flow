@@ -49,6 +49,8 @@ import io.github.aedev.flow.ui.screens.shorts.ShortsScreen
 import io.github.aedev.flow.ui.screens.subscriptions.SubscriptionsScreen
 import io.github.aedev.flow.ui.screens.channel.ChannelScreen
 import io.github.aedev.flow.ui.screens.channel.peertube.PeerTubeChannelScreen
+import io.github.aedev.flow.ui.screens.channel.linked.LinkedChannelGate
+import io.github.aedev.flow.ui.screens.channel.linked.LinkedChannelScreen
 import io.github.aedev.flow.ui.screens.onboarding.OnboardingScreen
 import io.github.aedev.flow.ui.theme.CustomThemePalettes
 import io.github.aedev.flow.ui.theme.ThemeMode
@@ -616,42 +618,63 @@ fun NavGraphBuilder.flowAppGraph(
     }
     
     composable(
-        route = "channel?url={channelUrl}",
-        arguments = listOf(navArgument("channelUrl") { type = NavType.StringType })
+        route = YOUTUBE_CHANNEL_ROUTE,
+        arguments = listOf(
+            navArgument("channelUrl") { type = NavType.StringType },
+            navArgument("plain") { type = NavType.BoolType; defaultValue = false }
+        )
     ) { backStackEntry ->
         currentRoute.value = "channel"
         showBottomNav.value = false
         val channelUrl = backStackEntry.arguments?.getString("channelUrl")?.let {
             java.net.URLDecoder.decode(it, "UTF-8")
         } ?: ""
-        
-        ChannelScreen(
-            channelUrl = channelUrl,
-            onVideoClick = { video ->
-                if (video.isShort && !disableShortsPlayer) {
-                    navController.navigate("shorts?startVideoId=${video.id}")
-                } else {
-                    navController.navigate("player/${video.id}")
-                }
-            },
-            onChannelClick = { channelId ->
-                navController.navigateToYoutubeChannel(channelId)
-            },
-            onShortClick = { videoId ->
-                if (disableShortsPlayer) {
-                    navController.navigate("player/$videoId")
-                } else {
-                    navController.navigate("shorts?startVideoId=$videoId")
-                }
-            },
-            onPlaylistClick = { playlistId ->
-                navController.navigate("playlist/$playlistId")
-            },
-            onLinkChannel = { channelId, channelName ->
-                navController.navigate(channelLinksRoute(channelId, channelName))
-            },
-            onBackClick = { navController.popBackStack() }
-        )
+        val plainYoutube = backStackEntry.arguments?.getBoolean("plain") ?: false
+
+        // A linked creator gets one page for both platforms; everyone else the page they always had.
+        LinkedChannelGate(
+            channelId = youtubeChannelIdFromUrl(channelUrl),
+            forcePlain = plainYoutube,
+            linked = { linkedId ->
+                LinkedChannelScreen(
+                    channelId = linkedId,
+                    onVideoClick = { video -> navController.navigate("player/${video.id}") },
+                    onBackClick = { navController.popBackStack() },
+                    onOpenYoutubeChannel = { youtubeId ->
+                        // Straight to the plain page, bypassing the gate that sent us here.
+                        youtubeChannelRoute(youtubeId)?.let { navController.navigate("$it&plain=true") }
+                    }
+                )
+            }
+        ) {
+            ChannelScreen(
+                channelUrl = channelUrl,
+                onVideoClick = { video ->
+                    if (video.isShort && !disableShortsPlayer) {
+                        navController.navigate("shorts?startVideoId=${video.id}")
+                    } else {
+                        navController.navigate("player/${video.id}")
+                    }
+                },
+                onChannelClick = { channelId ->
+                    navController.navigateToYoutubeChannel(channelId)
+                },
+                onShortClick = { videoId ->
+                    if (disableShortsPlayer) {
+                        navController.navigate("player/$videoId")
+                    } else {
+                        navController.navigate("shorts?startVideoId=$videoId")
+                    }
+                },
+                onPlaylistClick = { playlistId ->
+                    navController.navigate("playlist/$playlistId")
+                },
+                onLinkChannel = { channelId, channelName ->
+                    navController.navigate(channelLinksRoute(channelId, channelName))
+                },
+                onBackClick = { navController.popBackStack() }
+            )
+        }
     }
 
     // PeerTube channel page — a federated channel has no YouTube URL, so it is addressed by id.
@@ -665,12 +688,27 @@ fun NavGraphBuilder.flowAppGraph(
             java.net.URLDecoder.decode(it, "UTF-8")
         } ?: ""
 
-        PeerTubeChannelScreen(
+        LinkedChannelGate(
             channelId = peerTubeChannelId,
-            onVideoClick = { video -> navController.navigate("player/${video.id}") },
-            onBackClick = { navController.popBackStack() },
-            onOpenLinkedChannel = { linkedId -> navController.navigateToYoutubeChannel(linkedId) }
-        )
+            forcePlain = false,
+            linked = { linkedId ->
+                LinkedChannelScreen(
+                    channelId = linkedId,
+                    onVideoClick = { video -> navController.navigate("player/${video.id}") },
+                    onBackClick = { navController.popBackStack() },
+                    onOpenYoutubeChannel = { youtubeId ->
+                        youtubeChannelRoute(youtubeId)?.let { navController.navigate("$it&plain=true") }
+                    }
+                )
+            }
+        ) {
+            PeerTubeChannelScreen(
+                channelId = peerTubeChannelId,
+                onVideoClick = { video -> navController.navigate("player/${video.id}") },
+                onBackClick = { navController.popBackStack() },
+                onOpenLinkedChannel = { linkedId -> navController.navigateToYoutubeChannel(linkedId) }
+            )
+        }
     }
 
     // History Screen
