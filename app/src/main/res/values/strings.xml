@@ -2477,11 +2477,19 @@
     <string name="fediverse_error_unresolvable">This video is not known to your instance yet.</string>
     <string name="fediverse_error_no_browser">No browser is available to complete sign-in.</string>
 
+    <string name="peertube_discovery_title">Global search</string>
+    <string name="peertube_discovery_description">Also search the whole PeerTube network through %1$s, not just your own instances. Your search terms are sent to that server.</string>
+    <string name="peertube_discovery_index_label">Search index</string>
+    <string name="peertube_discovery_index_hint">SepiaSearch is the best known index, but not the only one.</string>
+
     <string name="channel_links_title">Channel links</string>
     <string name="channel_links_subtitle">Pair a YouTube channel with the same creator on PeerTube</string>
     <string name="channel_links_description">Link a YouTube channel to the same creator\'s PeerTube channel. TubeHub then points you at the decentralised copy — and, if you want, keeps both subscriptions together.</string>
     <string name="channel_links_youtube_label">YouTube channel</string>
-    <string name="channel_links_youtube_hint">Channel id (UC…) or handle. Opening this screen from a channel page fills it in for you.</string>
+    <string name="channel_links_youtube_filter">Filter your subscriptions</string>
+    <string name="channel_links_clear_selection">Pick a different channel</string>
+    <string name="channel_links_no_subscriptions">No subscribed channels yet. You can also open a channel and use “Link a PeerTube channel” there.</string>
+    <string name="channel_links_no_match">No subscription matches. Open the channel itself and use “Link a PeerTube channel” there.</string>
     <string name="channel_links_peertube_label">PeerTube channel</string>
     <string name="channel_links_peertube_hint">Search by name, or paste an address like https://framatube.org/c/name or name@framatube.org</string>
     <string name="channel_links_search">Search</string>

@@ -144,6 +144,21 @@ Reaching it costs one branch in `ChannelNavigation.kt`, because `navigateToYoutu
 single funnel all eight call sites in `FlowNavigation.kt` already go through. Its YouTube-specific
 name is kept for exactly that reason.
 
+### Why channel search goes through a network-wide index
+
+Searching only the user's own instances searches a handful of servers out of thousands, and many
+instances restrict their index to local content — a channel that plainly exists is then unfindable,
+which made the linking screen useless. So channel search has one extra lane, SepiaSearch by default,
+behind a visible switch: the search term leaves the device, and this app suppresses SponsorBlock for
+federated videos for exactly that kind of reason.
+
+The subtlety worth remembering is in `toDiscoveredChannel`. A hit describes a channel on one host and
+arrives from another, so **id and artwork resolve against different hosts** — the id against the
+channel's own, the artwork against whoever answered. Building the id from the queried URL yields
+`peertube_sepiasearch.org_name`, which looks fine in a list and 404s on open. Applying the same
+function to instance hits normalises mirrors onto their origin, which is what lets `distinctBy`
+collapse one creator found twice.
+
 ### Why subscribing had to touch two more files
 
 `SubscriptionRepository` stores any id, but both consumers assumed YouTube: the feed goes through

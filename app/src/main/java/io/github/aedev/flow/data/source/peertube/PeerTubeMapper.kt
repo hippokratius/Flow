@@ -87,6 +87,44 @@ fun PTChannelDetailDto.toChannel(instance: PeerTubeInstance): Channel {
 }
 
 /**
+ * Maps a channel-search hit onto the domain model, addressed by **its own** host.
+ *
+ * The two hosts in play are different and must not be conflated. A hit from a search index — the
+ * default is SepiaSearch, which indexes the whole PeerTube network — describes a channel living on,
+ * say, `framatube.org`, while the answer itself came from `sepiasearch.org`. Building the id from the
+ * queried URL, as [toChannel] does, would yield `peertube_sepiasearch.org_name` and every later
+ * request for that channel would 404.
+ *
+ * So: id and [Channel.instanceHost] come from the channel's own `host` (or its actor URL), while the
+ * artwork is resolved against [answeringUrl] — a remote actor's avatar is served as a lazy-static
+ * path by whichever instance answered, not by the channel's home.
+ *
+ * Used for hits from the user's own instances too, which normalises every search result onto its
+ * origin. That is what makes de-duplication work: a channel that `tilvids.com` merely mirrors yields
+ * the same id whichever route found it, so `distinctBy { it.id }` collapses the pair. Two different
+ * creators who happen to share a name keep their own ids, because their hosts differ.
+ *
+ * Null when no host can be determined — without one there is nothing to address.
+ */
+fun PTChannelDetailDto.toDiscoveredChannel(answeringUrl: String): Channel? {
+    val originHost = host.takeIf { it.isNotBlank() } ?: actorHost(url) ?: return null
+    val handle = name.trim().takeIf { it.isNotBlank() } ?: return null
+    val id = ContentId.peerTube(originHost, handle.substringBefore('@'))
+
+    return Channel(
+        id = id.raw,
+        name = displayName.takeIf { it.isNotBlank() } ?: handle,
+        thumbnailUrl = avatars.pickWidest(avatar, answeringUrl).orEmpty(),
+        subscriberCount = followersCount,
+        description = description.orEmpty(),
+        url = federatedChannelUrl(id).orEmpty(),
+        bannerUrl = banners.pickWidest(banner, answeringUrl).orEmpty(),
+        source = SourceKind.PEERTUBE,
+        instanceHost = id.instanceHost,
+    )
+}
+
+/**
  * The handle this channel is addressed by *on [instanceHost]*.
  *
  * A channel hosted by the queried instance is addressed by its bare name. One that the instance only

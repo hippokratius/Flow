@@ -26,6 +26,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AddCircle
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
@@ -60,6 +61,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import io.github.aedev.flow.R
 import io.github.aedev.flow.data.source.peertube.PeerTubeInstance
 import io.github.aedev.flow.data.source.peertube.PeerTubeInstances
+import io.github.aedev.flow.data.source.peertube.hostOf
 import io.github.aedev.flow.data.source.peertube.PeerTubePreferences
 import io.github.aedev.flow.fediverse.FediverseAccount
 import io.github.aedev.flow.fediverse.FediverseAccountStore
@@ -87,6 +89,16 @@ class PeerTubeInstancesViewModel @Inject constructor(
     val accounts: StateFlow<List<FediverseAccount>> = accountStore.accounts
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
+    val discoveryEnabled: StateFlow<Boolean> = preferences.discoveryEnabled
+        .stateIn(viewModelScope, SharingStarted.Eagerly, true)
+
+    val discoveryIndexUrl: StateFlow<String> = preferences.discoveryIndexUrl
+        .stateIn(
+            viewModelScope,
+            SharingStarted.Eagerly,
+            PeerTubePreferences.DEFAULT_DISCOVERY_INDEX,
+        )
+
     val miAuthResults = miAuthEvents.events
 
     fun add(name: String, url: String) {
@@ -99,6 +111,14 @@ class PeerTubeInstancesViewModel @Inject constructor(
 
     fun setEnabled(id: String, enabled: Boolean) {
         viewModelScope.launch { preferences.setInstanceEnabled(id, enabled) }
+    }
+
+    fun setDiscoveryEnabled(enabled: Boolean) {
+        viewModelScope.launch { preferences.setDiscoveryEnabled(enabled) }
+    }
+
+    fun setDiscoveryIndexUrl(url: String) {
+        viewModelScope.launch { preferences.setDiscoveryIndexUrl(url) }
     }
 
     /**
@@ -128,6 +148,8 @@ fun PeerTubeInstancesScreen(
 ) {
     val instances by viewModel.instances.collectAsState()
     val accounts by viewModel.accounts.collectAsState()
+    val discoveryEnabled by viewModel.discoveryEnabled.collectAsState()
+    val discoveryIndexUrl by viewModel.discoveryIndexUrl.collectAsState()
     val context = LocalContext.current
 
     var newUrl by remember { mutableStateOf("") }
@@ -245,6 +267,78 @@ fun PeerTubeInstancesScreen(
                             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                             keyboardActions = KeyboardActions(onDone = { submit() })
                         )
+                    }
+                }
+            }
+
+            item {
+                Text(
+                    text = stringResource(R.string.peertube_discovery_title),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+            }
+
+            item {
+                SettingsGroup {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = stringResource(
+                                    R.string.peertube_discovery_description,
+                                    PeerTubeInstances.normalizeUrl(discoveryIndexUrl)
+                                        ?.let { hostOf(it) }
+                                        ?: discoveryIndexUrl
+                                ),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Switch(
+                                checked = discoveryEnabled,
+                                onCheckedChange = viewModel::setDiscoveryEnabled
+                            )
+                        }
+                        if (discoveryEnabled) {
+                            var indexDraft by remember(discoveryIndexUrl) {
+                                mutableStateOf(discoveryIndexUrl)
+                            }
+                            OutlinedTextField(
+                                value = indexDraft,
+                                onValueChange = { indexDraft = it },
+                                label = { Text(stringResource(R.string.peertube_discovery_index_label)) },
+                                supportingText = {
+                                    Text(stringResource(R.string.peertube_discovery_index_hint))
+                                },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth(),
+                                keyboardOptions = KeyboardOptions(
+                                    keyboardType = KeyboardType.Uri,
+                                    imeAction = ImeAction.Done
+                                ),
+                                keyboardActions = KeyboardActions(
+                                    onDone = { viewModel.setDiscoveryIndexUrl(indexDraft) }
+                                ),
+                                trailingIcon = {
+                                    if (indexDraft != discoveryIndexUrl) {
+                                        IconButton(
+                                            onClick = { viewModel.setDiscoveryIndexUrl(indexDraft) }
+                                        ) {
+                                            Icon(
+                                                Icons.Default.Check,
+                                                contentDescription = stringResource(R.string.save)
+                                            )
+                                        }
+                                    }
+                                }
+                            )
+                        }
                     }
                 }
             }

@@ -82,34 +82,48 @@ class PeerTubeContentSource @Inject constructor(
             ?.toChannel(instance)
     }
 
+    /**
+     * Channels matching [query], from the user's instances *and* a network-wide search index.
+     *
+     * The index — SepiaSearch by default — is what makes this useful at all: the configured instances
+     * are a handful out of thousands, and many restrict their index to local content. It is one more
+     * lane in the same all-settled fan-out, so if it is down or switched off the instance hits still
+     * arrive.
+     *
+     * Every hit, whichever lane found it, is mapped by [toDiscoveredChannel], which addresses a channel
+     * by its own host rather than by whoever answered. That normalises mirrors onto their origin, so
+     * `distinctBy` below collapses one creator found twice into one row.
+     */
     override suspend fun searchChannels(query: String): SourcePage<Channel> = supervisorScope {
         val trimmed = query.trim()
         if (trimmed.isEmpty()) return@supervisorScope SourcePage(emptyList(), null)
 
-        val instances = preferences.currentEnabledInstances()
-        if (instances.isEmpty()) return@supervisorScope SourcePage(emptyList(), null)
+        val sources = buildList {
+            preferences.currentEnabledInstances().forEach { add(it.host to it.url) }
+            preferences.currentDiscoveryIndexUrl()?.let { indexUrl ->
+                add((hostOf(indexUrl) ?: indexUrl) to indexUrl)
+            }
+        }
+        if (sources.isEmpty()) return@supervisorScope SourcePage(emptyList(), null)
 
-        val results = instances.map { instance ->
+        val results = sources.map { (host, url) ->
             async {
-                instance to runCatching {
-                    api.searchChannels(instance.url, trimmed).data.map { it.toChannel(instance) }
+                host to runCatching {
+                    api.searchChannels(url, trimmed).data.mapNotNull { it.toDiscoveredChannel(url) }
                 }
             }
         }.awaitAll()
 
         SourcePage(
-            // The same creator is often mirrored on several instances; the id already carries the
-            // queried host, so those are distinct entries and must not be collapsed. Only exact
-            // duplicates are dropped.
             items = results.flatMap { (_, result) -> result.getOrNull().orEmpty() }
                 .distinctBy { it.id }
                 .sortedByDescending { it.subscriberCount },
             next = null,
-            errors = results.mapNotNull { (instance, result) ->
+            errors = results.mapNotNull { (host, result) ->
                 result.exceptionOrNull()?.let { failure ->
                     SourceError(
                         sourceKey = key,
-                        instanceHost = instance.host,
+                        instanceHost = host,
                         message = failure.message ?: failure::class.java.simpleName,
                     )
                 }

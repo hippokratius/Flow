@@ -11,6 +11,7 @@ package io.github.aedev.flow.data.source.peertube
 
 import android.content.Context
 import android.util.Log
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -59,6 +60,41 @@ class PeerTubePreferences @Inject constructor(
 
     suspend fun currentEnabledInstances(): List<PeerTubeInstance> = enabledInstances.first()
 
+    /**
+     * Whether channel search may also ask a network-wide search index.
+     *
+     * Searching only the user's own instances means searching two servers out of thousands, and many
+     * instances restrict their index to local content anyway — a channel that plainly exists is then
+     * unfindable. The index fixes that, at the cost of sending the search term to a third party, which
+     * is why it is a visible switch rather than a silent default. On, because a search that finds
+     * nothing is worse than useless.
+     */
+    val discoveryEnabled: Flow<Boolean> = context.tubeHubPreferencesDataStore.data
+        .map { preferences -> preferences[KEY_DISCOVERY_ENABLED] ?: true }
+
+    /**
+     * The index to ask. SepiaSearch is Framasoft's public instance of PeerTube's search index; it is
+     * the best known but not the only one, so this is configurable.
+     */
+    val discoveryIndexUrl: Flow<String> = context.tubeHubPreferencesDataStore.data
+        .map { preferences ->
+            preferences[KEY_DISCOVERY_INDEX_URL]?.takeIf { it.isNotBlank() } ?: DEFAULT_DISCOVERY_INDEX
+        }
+
+    /** The index to query, or null when the user switched global search off. */
+    suspend fun currentDiscoveryIndexUrl(): String? =
+        if (discoveryEnabled.first()) discoveryIndexUrl.first() else null
+
+    suspend fun setDiscoveryEnabled(enabled: Boolean) {
+        context.tubeHubPreferencesDataStore.edit { it[KEY_DISCOVERY_ENABLED] = enabled }
+    }
+
+    /** Ignores input that is not a usable URL, so a half-typed host cannot disable search silently. */
+    suspend fun setDiscoveryIndexUrl(rawUrl: String) {
+        val url = PeerTubeInstances.normalizeUrl(rawUrl) ?: return
+        context.tubeHubPreferencesDataStore.edit { it[KEY_DISCOVERY_INDEX_URL] = url }
+    }
+
     suspend fun addInstance(name: String, rawUrl: String) =
         update { PeerTubeInstances.add(it, name, rawUrl, id = UUID.randomUUID().toString()) }
 
@@ -76,9 +112,14 @@ class PeerTubePreferences @Inject constructor(
         }
     }
 
-    private companion object {
-        const val TAG = "PeerTubePreferences"
-        val KEY_INSTANCES = stringPreferencesKey("peertube_instances")
-        val instanceListSerializer = ListSerializer(PeerTubeInstance.serializer())
+    companion object {
+        /** Framasoft's public PeerTube search index. */
+        const val DEFAULT_DISCOVERY_INDEX = "https://sepiasearch.org"
+
+        private const val TAG = "PeerTubePreferences"
+        private val KEY_INSTANCES = stringPreferencesKey("peertube_instances")
+        private val KEY_DISCOVERY_ENABLED = booleanPreferencesKey("peertube_discovery_enabled")
+        private val KEY_DISCOVERY_INDEX_URL = stringPreferencesKey("peertube_discovery_index_url")
+        private val instanceListSerializer = ListSerializer(PeerTubeInstance.serializer())
     }
 }

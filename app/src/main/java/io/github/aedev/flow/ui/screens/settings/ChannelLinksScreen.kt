@@ -24,6 +24,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material3.Button
@@ -57,16 +58,19 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import io.github.aedev.flow.R
+import io.github.aedev.flow.data.local.SubscriptionRepository
 import io.github.aedev.flow.data.model.Channel
 import io.github.aedev.flow.data.source.ContentSourceRegistry
 import io.github.aedev.flow.data.source.contentId
 import io.github.aedev.flow.data.source.link.ChannelLink
 import io.github.aedev.flow.data.source.link.ChannelLinkStore
 import io.github.aedev.flow.data.source.peertube.PeerTubeChannelReference
+import io.github.aedev.flow.ui.components.ChannelCardHorizontal
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -88,27 +92,39 @@ fun ChannelLinksScreen(
     val links by viewModel.links.collectAsState()
     val mirrorSubscriptions by viewModel.mirrorSubscriptions.collectAsState()
     val search by viewModel.searchState.collectAsState()
+    val subscribedChannels by viewModel.subscribedChannels.collectAsState()
+    val subscriptionNames by viewModel.subscriptionNames.collectAsState()
 
-    var youtubeId by remember(prefilledYoutubeChannelId) {
-        mutableStateOf(prefilledYoutubeChannelId)
+    // A picked channel, never a typed id. The id has to match what the channel page reports, and only
+    // a subscription or a prefill from that very page is guaranteed to.
+    var selectedYoutube by remember(prefilledYoutubeChannelId) {
+        mutableStateOf(
+            prefilledYoutubeChannelId.trim().takeIf { it.isNotEmpty() }?.let { id ->
+                Channel(
+                    id = id,
+                    name = prefilledYoutubeChannelName.ifBlank { id },
+                    thumbnailUrl = "",
+                    subscriberCount = 0L,
+                )
+            }
+        )
     }
-    var youtubeName by remember(prefilledYoutubeChannelName) {
-        mutableStateOf(prefilledYoutubeChannelName)
-    }
+    var subscriptionQuery by remember { mutableStateOf("") }
     var peerTubeQuery by remember { mutableStateOf("") }
 
     LaunchedEffect(Unit) { viewModel.clearSearch() }
 
     fun linkTo(channelId: String, channelName: String) {
+        val youtube = selectedYoutube ?: return
         viewModel.link(
-            youtubeChannelId = youtubeId,
-            youtubeChannelName = youtubeName,
+            youtubeChannelId = youtube.id,
+            youtubeChannelName = youtube.name,
             peerTubeChannelId = channelId,
             peerTubeChannelName = channelName,
         )
         peerTubeQuery = ""
-        youtubeId = ""
-        youtubeName = ""
+        subscriptionQuery = ""
+        selectedYoutube = null
         viewModel.clearSearch()
     }
 
@@ -158,17 +174,79 @@ fun ChannelLinksScreen(
                         modifier = Modifier.padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        OutlinedTextField(
-                            value = youtubeId,
-                            onValueChange = { youtubeId = it },
-                            label = { Text(stringResource(R.string.channel_links_youtube_label)) },
-                            supportingText = {
-                                Text(stringResource(R.string.channel_links_youtube_hint))
-                            },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth(),
-                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next)
+                        Text(
+                            text = stringResource(R.string.channel_links_youtube_label),
+                            style = MaterialTheme.typography.titleSmall
                         )
+                        val selected = selectedYoutube
+                        if (selected != null) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                ChannelCardHorizontal(
+                                    channel = selected,
+                                    modifier = Modifier.weight(1f),
+                                    onClick = {}
+                                )
+                                IconButton(onClick = { selectedYoutube = null }) {
+                                    Icon(
+                                        Icons.Default.Close,
+                                        contentDescription = stringResource(
+                                            R.string.channel_links_clear_selection
+                                        )
+                                    )
+                                }
+                            }
+                        } else if (subscribedChannels.isEmpty()) {
+                            Text(
+                                text = stringResource(R.string.channel_links_no_subscriptions),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        } else {
+                            OutlinedTextField(
+                                value = subscriptionQuery,
+                                onValueChange = { subscriptionQuery = it },
+                                label = {
+                                    Text(stringResource(R.string.channel_links_youtube_filter))
+                                },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth(),
+                                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done)
+                            )
+                            val matches = remember(subscribedChannels, subscriptionQuery) {
+                                filterChannelsByName(subscribedChannels, subscriptionQuery)
+                                    .take(MAX_PICKER_ROWS)
+                            }
+                            if (matches.isEmpty()) {
+                                Text(
+                                    text = stringResource(R.string.channel_links_no_match),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            matches.forEach { channel ->
+                                ChannelCardHorizontal(
+                                    channel = channel,
+                                    onClick = {
+                                        selectedYoutube = channel
+                                        subscriptionQuery = ""
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            item {
+                SettingsGroup {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
                         OutlinedTextField(
                             value = peerTubeQuery,
                             onValueChange = { peerTubeQuery = it },
@@ -204,7 +282,7 @@ fun ChannelLinksScreen(
                         if (pasted != null) {
                             Button(
                                 onClick = { linkTo(pasted.raw, pasted.nativeId) },
-                                enabled = youtubeId.isNotBlank(),
+                                enabled = selectedYoutube != null,
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Text(
@@ -236,7 +314,7 @@ fun ChannelLinksScreen(
                         search.results.forEach { candidate ->
                             SearchResultRow(
                                 channel = candidate,
-                                canLink = youtubeId.isNotBlank(),
+                                canLink = selectedYoutube != null,
                                 onLink = { linkTo(candidate.id, candidate.name) }
                             )
                         }
@@ -285,7 +363,11 @@ fun ChannelLinksScreen(
                         Column {
                             links.forEachIndexed { index, link ->
                                 if (index > 0) HorizontalDivider()
-                                LinkRow(link = link, onRemove = { viewModel.unlink(link) })
+                                LinkRow(
+                                    link = link,
+                                    youtubeName = link.youtubeDisplayName(subscriptionNames),
+                                    onRemove = { viewModel.unlink(link) }
+                                )
                             }
                         }
                     }
@@ -325,7 +407,7 @@ private fun SearchResultRow(
 }
 
 @Composable
-private fun LinkRow(link: ChannelLink, onRemove: () -> Unit) {
+private fun LinkRow(link: ChannelLink, youtubeName: String, onRemove: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -334,7 +416,7 @@ private fun LinkRow(link: ChannelLink, onRemove: () -> Unit) {
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = link.youtubeChannelName.ifBlank { link.youtubeChannelId },
+                text = youtubeName,
                 style = MaterialTheme.typography.bodyLarge,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
@@ -364,10 +446,24 @@ private fun LinkRow(link: ChannelLink, onRemove: () -> Unit) {
 class ChannelLinksViewModel @Inject constructor(
     private val store: ChannelLinkStore,
     private val registry: ContentSourceRegistry,
+    subscriptions: SubscriptionRepository,
 ) : ViewModel() {
 
     val links: StateFlow<List<ChannelLink>> = store.links
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    private val allSubscriptions = subscriptions.getAllSubscriptions()
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    /** The YouTube half is picked from here — see [youtubeSubscriptionChannels] for why filtered. */
+    val subscribedChannels: StateFlow<List<Channel>> = allSubscriptions
+        .map(::youtubeSubscriptionChannels)
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    /** Names for links stored before the picker existed, so the list never shows a bare id. */
+    val subscriptionNames: StateFlow<Map<String, String>> = allSubscriptions
+        .map(::subscriptionNamesById)
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
 
     val mirrorSubscriptions: StateFlow<Boolean> = store.mirrorSubscriptions
         .stateIn(viewModelScope, SharingStarted.Eagerly, true)
@@ -426,3 +522,5 @@ data class ChannelSearchState(
     val isSearching: Boolean = false,
     val hasSearched: Boolean = false,
 )
+
+private const val MAX_PICKER_ROWS = 30
