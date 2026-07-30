@@ -2477,6 +2477,27 @@
     <string name="fediverse_error_unresolvable">This video is not known to your instance yet.</string>
     <string name="fediverse_error_no_browser">No browser is available to complete sign-in.</string>
 
+    <string name="channel_links_title">Channel links</string>
+    <string name="channel_links_subtitle">Pair a YouTube channel with the same creator on PeerTube</string>
+    <string name="channel_links_description">Link a YouTube channel to the same creator\'s PeerTube channel. TubeHub then points you at the decentralised copy — and, if you want, keeps both subscriptions together.</string>
+    <string name="channel_links_youtube_label">YouTube channel</string>
+    <string name="channel_links_youtube_hint">Channel id (UC…) or handle. Opening this screen from a channel page fills it in for you.</string>
+    <string name="channel_links_peertube_label">PeerTube channel</string>
+    <string name="channel_links_peertube_hint">Search by name, or paste an address like https://framatube.org/c/name or name@framatube.org</string>
+    <string name="channel_links_search">Search</string>
+    <string name="channel_links_link">Link</string>
+    <string name="channel_links_link_pasted">Link %1$s</string>
+    <string name="channel_links_no_results">Nothing found. Some instances only search their own content — pasting the channel address always works.</string>
+    <string name="channel_links_empty">No links yet.</string>
+    <string name="channel_links_pair">PeerTube: %1$s on %2$s</string>
+    <string name="channel_links_remove">Remove link</string>
+    <string name="channel_links_mirror_title">Keep subscriptions together</string>
+    <string name="channel_links_mirror_description">Subscribing to one channel of a linked pair subscribes the other too, and unsubscribing removes both.</string>
+    <string name="channel_link_also_on_peertube">Also on PeerTube</string>
+    <string name="channel_link_also_on_youtube">Also on YouTube</string>
+    <string name="channel_link_open">Open</string>
+    <string name="channel_link_add">Link a PeerTube channel</string>
+
     <string name="peertube_channel_error">This channel could not be loaded.</string>
     <string name="peertube_channel_instance">on %1$s</string>
     <string name="peertube_channel_subscribers">%1$s subscribers</string>

@@ -87,6 +87,23 @@ class PeerTubeApi @Inject constructor(
         }
     }
 
+    /**
+     * Channels matching [query] on this instance.
+     *
+     * Note that instances vary in what they will answer: `searchTargetType` may be restricted to
+     * local content, and federated search can be switched off entirely. An empty result therefore
+     * does not mean the channel does not exist, which is why pasting an address stays a first-class
+     * way to link a channel — see [PeerTubeChannelReference].
+     */
+    suspend fun searchChannels(
+        instanceUrl: String,
+        query: String,
+        count: Int = 10,
+    ): PTChannelListDto {
+        val search = URLEncoder.encode(query, "UTF-8")
+        return get("$instanceUrl/api/v1/search/video-channels?search=$search&count=$count")
+    }
+
     /** Name, description, follower count and artwork of a channel. Same actor fallback as above. */
     suspend fun channelDetail(instanceUrl: String, channelName: String): PTChannelDetailDto {
         val name = URLEncoder.encode(channelName, "UTF-8")

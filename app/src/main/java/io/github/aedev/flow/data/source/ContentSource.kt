@@ -43,6 +43,15 @@ interface ContentSource {
 
     suspend fun channel(id: ContentId): Channel? = null
 
+    /**
+     * Channels matching [query].
+     *
+     * Separate from [search] because that one returns videos, and because only sources that can
+     * actually answer it implement this: YouTube's channel search lives in `YouTubeRepository` behind
+     * NewPipe types and has no caller that needs it here.
+     */
+    suspend fun searchChannels(query: String): SourcePage<Channel> = SourcePage(emptyList(), null)
+
     suspend fun channelUploads(id: ContentId, cursor: SourceCursor? = null): SourcePage<Video> =
         SourcePage(emptyList(), null)
 

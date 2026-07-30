@@ -82,6 +82,41 @@ class PeerTubeContentSource @Inject constructor(
             ?.toChannel(instance)
     }
 
+    override suspend fun searchChannels(query: String): SourcePage<Channel> = supervisorScope {
+        val trimmed = query.trim()
+        if (trimmed.isEmpty()) return@supervisorScope SourcePage(emptyList(), null)
+
+        val instances = preferences.currentEnabledInstances()
+        if (instances.isEmpty()) return@supervisorScope SourcePage(emptyList(), null)
+
+        val results = instances.map { instance ->
+            async {
+                instance to runCatching {
+                    api.searchChannels(instance.url, trimmed).data.map { it.toChannel(instance) }
+                }
+            }
+        }.awaitAll()
+
+        SourcePage(
+            // The same creator is often mirrored on several instances; the id already carries the
+            // queried host, so those are distinct entries and must not be collapsed. Only exact
+            // duplicates are dropped.
+            items = results.flatMap { (_, result) -> result.getOrNull().orEmpty() }
+                .distinctBy { it.id }
+                .sortedByDescending { it.subscriberCount },
+            next = null,
+            errors = results.mapNotNull { (instance, result) ->
+                result.exceptionOrNull()?.let { failure ->
+                    SourceError(
+                        sourceKey = key,
+                        instanceHost = instance.host,
+                        message = failure.message ?: failure::class.java.simpleName,
+                    )
+                }
+            },
+        )
+    }
+
     override suspend fun channelUploads(id: ContentId, cursor: SourceCursor?): SourcePage<Video> {
         val host = id.instanceHost ?: return SourcePage(emptyList(), null)
         val handle = id.nativeId.takeIf { it.isNotBlank() }

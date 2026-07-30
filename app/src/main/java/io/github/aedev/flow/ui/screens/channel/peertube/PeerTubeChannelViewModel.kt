@@ -21,6 +21,8 @@ import io.github.aedev.flow.data.model.Video
 import io.github.aedev.flow.data.source.ContentSourceRegistry
 import io.github.aedev.flow.data.source.SourceCursor
 import io.github.aedev.flow.data.source.contentId
+import io.github.aedev.flow.data.source.link.ChannelLinkStore
+import io.github.aedev.flow.data.source.link.ChannelLinkSubscriptionMirror
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -43,10 +45,14 @@ import javax.inject.Inject
 @HiltViewModel
 class PeerTubeChannelViewModel @Inject constructor(
     private val registry: ContentSourceRegistry,
+    private val links: ChannelLinkStore,
     @ApplicationContext private val context: Context,
 ) : ViewModel() {
 
     private val subscriptions = SubscriptionRepository.getInstance(context)
+
+    /** Carries a subscription over to the linked YouTube channel, when the user set one up. */
+    private val mirror = ChannelLinkSubscriptionMirror(links, subscriptions)
 
     private val _uiState = MutableStateFlow(PeerTubeChannelUiState())
     val uiState: StateFlow<PeerTubeChannelUiState> = _uiState.asStateFlow()
@@ -145,12 +151,16 @@ class PeerTubeChannelViewModel @Inject constructor(
                     )
                 )
             }
+            mirror.mirror(state.channelId, subscribed = !state.isSubscribed)
         }
     }
 
     fun unsubscribe() {
         val channelId = _uiState.value.channelId.takeIf { it.isNotBlank() } ?: return
-        viewModelScope.launch { subscriptions.unsubscribe(channelId) }
+        viewModelScope.launch {
+            subscriptions.unsubscribe(channelId)
+            mirror.mirror(channelId, subscribed = false)
+        }
     }
 
     private fun observeSubscription(channelId: String) {

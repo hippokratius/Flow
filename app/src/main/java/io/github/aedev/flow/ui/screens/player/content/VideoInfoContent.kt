@@ -367,6 +367,13 @@ fun VideoInfoContent(
         )
     }
 
+    // "This creator also publishes on PeerTube", when the user has said so. Renders nothing
+    // otherwise, so it costs an unlinked channel nothing but a lookup in a cached list.
+    io.github.aedev.flow.ui.components.LinkedChannelRow(
+        channelId = video.channelId,
+        onOpenLinkedChannel = onChannelClick
+    )
+
     if (uiState.isLiveChatAvailable) {
         io.github.aedev.flow.ui.components.LiveChatPreview(
             onClick = { screenState.showLiveChatSheet = true }

@@ -65,6 +65,25 @@ internal fun youtubeChannelUrl(channelIdOrHandle: String): String? {
     }
 }
 
+/** Route pattern of the channel-links settings screen. Both arguments are optional. */
+internal const val CHANNEL_LINKS_ROUTE =
+    "settings/channel_links?youtubeId={youtubeId}&youtubeName={youtubeName}"
+
+/**
+ * Route to the channel-links screen, optionally pre-filled with the YouTube channel in hand.
+ *
+ * Called with arguments from a channel page — where the app already knows whose counterpart is being
+ * looked for — and without any from the settings list.
+ */
+internal fun channelLinksRoute(
+    youtubeChannelId: String = "",
+    youtubeChannelName: String = "",
+): String {
+    val encode = { value: String -> URLEncoder.encode(value.trim(), Charsets.UTF_8.name()) }
+    return "settings/channel_links?youtubeId=${encode(youtubeChannelId)}" +
+        "&youtubeName=${encode(youtubeChannelName)}"
+}
+
 /** Route pattern of the PeerTube channel page. Declared here so the arg name has one owner. */
 internal const val PEERTUBE_CHANNEL_ROUTE = "peertubeChannel?id={channelId}"
 

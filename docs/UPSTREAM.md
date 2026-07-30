@@ -40,9 +40,12 @@ TubeHub code lives in packages upstream will never create, so it can never confl
 - `io.github.aedev.flow.fediverse` — Misskey/ActivityPub interaction
 - `io.github.aedev.flow.player.source` — playback for non-YouTube sources
 - `ui/screens/channel/peertube` — the PeerTube channel page
+- `io.github.aedev.flow.data.source.link` — cross-platform channel links
 - `ui/components/VideoSourceBadge.kt`, `ui/screens/home/HomeFeedFederatedMerge.kt`,
   `ui/screens/settings/PeerTubeInstancesScreen.kt`,
-  `ui/screens/subscriptions/FederatedSubscriptionFeed.kt`
+  `ui/screens/subscriptions/FederatedSubscriptionFeed.kt`,
+  `ui/components/LinkedChannelRow.kt`, `ui/screens/settings/ChannelLinksScreen.kt`,
+  `ui/screens/home/HeaderLogoPaths.kt`
 - `.github/workflows/tubehub-ci.yml`, `NOTICE.md`, `docs/UPSTREAM.md`, `res/xml/backup_rules.xml`,
   `res/xml/data_extraction_rules.xml`
 
@@ -86,7 +89,12 @@ Keep this list short. If it grows, the seam has drifted.
 | `ui/components/VideoPlayerComponents.kt` | instance name under the subscriber count |
 | `ui/screens/library/LibraryShelfCards.kt` | source badge |
 | `ui/screens/history/HistoryScreen.kt` | source badge, kind derived from the id |
-| `ui/NavigationDestinations.kt` | `youtubeChannelUrl` returns null for non-YouTube ids; PeerTube channel route |
+| `ui/NavigationDestinations.kt` | `youtubeChannelUrl` returns null for non-YouTube ids; two added routes |
+| `ui/screens/home/HomeScreen.kt` | header logo paths moved out to their own file |
+| `ui/screens/channel/ChannelScreen.kt` | one defaulted callback, link row and link button in the header |
+| `ui/screens/channel/ChannelViewModel.kt` | subscription mirroring on subscribe and unsubscribe |
+| `data/source/ContentSource.kt` | `searchChannels` with an empty default |
+| `res/drawable-xhdpi/tv_banner.xml`, `res/mipmap-anydpi-v26/ic_launcher_foreground.xml` | upstream mark replaced |
 | `ui/ChannelNavigation.kt` | one dispatch branch to the PeerTube channel page |
 | `ui/screens/subscriptions/SubscriptionsViewModel.kt` | federated lane beside the RSS lane |
 | `notification/SubscriptionCheckWorker.kt` | federated ids skipped, not polled against YouTube RSS |
@@ -144,6 +152,31 @@ name is kept for exactly that reason.
 been invisible in the feed and a guaranteed 404 in the worker — a subscribe button that does nothing
 is worse than none, so the feed gained a federated lane and the worker skips non-YouTube ids.
 Upload notifications for PeerTube channels stay off rather than silently never firing.
+
+### Why the header logo needed its own fix
+
+Replacing the launcher artwork did not change the mark next to the app name, because that mark is not
+a drawable: `HomeScreen` draws it on a `Canvas` from path strings. Worse than the "F" was the plate —
+upstream's path is the YouTube play-button silhouette, so the app that exists to move people off
+YouTube wore its badge in its own header. The paths now live in `ui/screens/home/HeaderLogoPaths.kt`
+so `HeaderLogoPathTest` can pin them to the launcher drawable and the TV banner; the same artwork on
+three surfaces, tested, is what stops the next one being missed.
+
+`res/mipmap-anydpi-v26/ic_launcher_foreground.xml` is unreferenced — `@mipmap/` and `@drawable/` are
+separate resource types and every adaptive icon points at the drawable — but it still shipped the old
+mark, so it was neutralised rather than left or deleted.
+
+### Why channel links are hand-made
+
+Matching a creator's channels across platforms by name cannot be done safely: reupload accounts and
+mirrors routinely carry the name, and a wrong link would send the user to a stranger's videos and, with
+mirroring on, subscribe them to it. So the pairing is declared by the user, one counterpart per
+channel, and stored in the fork's own DataStore rather than a Room table — a handful of preference rows
+is not worth a schema migration.
+
+Subscribing mirrors across the link because the subscription *is* the viewing habit this feature is
+meant to move. It is a switch, defaulting on, because a subscription the user did not knowingly create
+is worse than none.
 
 ### Why those guards exist
 

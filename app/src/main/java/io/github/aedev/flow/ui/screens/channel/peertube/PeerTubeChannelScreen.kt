@@ -57,6 +57,7 @@ import io.github.aedev.flow.data.model.Video
 import io.github.aedev.flow.data.source.contentId
 import io.github.aedev.flow.ui.components.ChannelAvatarImage
 import io.github.aedev.flow.ui.components.ChannelBanner
+import io.github.aedev.flow.ui.components.LinkedChannelRow
 import io.github.aedev.flow.ui.components.VideoCardHorizontal
 import io.github.aedev.flow.ui.screens.channel.ChannelRequestErrorState
 import io.github.aedev.flow.ui.screens.channel.SubscribeButton
@@ -75,6 +76,7 @@ fun PeerTubeChannelScreen(
     channelId: String,
     onVideoClick: (Video) -> Unit,
     onBackClick: () -> Unit,
+    onOpenLinkedChannel: (String) -> Unit = {},
     viewModel: PeerTubeChannelViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsState()
@@ -147,6 +149,14 @@ fun PeerTubeChannelScreen(
                                 isSubscribed = state.isSubscribed,
                                 onSubscribeClick = viewModel::toggleSubscription,
                                 onUnsubscribeClick = viewModel::unsubscribe
+                            )
+                        }
+                        // The link is bidirectional; without this the YouTube side would be a
+                        // one-way door into PeerTube.
+                        item("link") {
+                            LinkedChannelRow(
+                                channelId = channel.id,
+                                onOpenLinkedChannel = onOpenLinkedChannel
                             )
                         }
                     }

@@ -352,6 +352,7 @@ fun NavGraphBuilder.flowAppGraph(
             onNavigateToPlayerSettings = { navController.navigate("settings/player") },
             onNavigateToProxySettings = { navController.navigate("settings/proxy") },
             onNavigateToPeerTubeInstances = { navController.navigate("settings/peertube") },
+            onNavigateToChannelLinks = { navController.navigate(channelLinksRoute()) },
             onNavigateToVideoQuality = { navController.navigate("settings/video_quality") },
             onNavigateToShortsQuality = { navController.navigate("settings/shorts_quality") },
             onNavigateToContentSettings = { navController.navigate("settings/content") },
@@ -432,6 +433,29 @@ fun NavGraphBuilder.flowAppGraph(
         showBottomNav.value = false
         io.github.aedev.flow.ui.screens.settings.PeerTubeInstancesScreen(
             onNavigateBack = { navController.popBackStack() }
+        )
+    }
+
+    // Cross-platform channel links. The optional arguments let a channel page open this already
+    // knowing which YouTube channel the user means, so only the PeerTube half is left to find.
+    composable(
+        route = CHANNEL_LINKS_ROUTE,
+        arguments = listOf(
+            navArgument("youtubeId") { type = NavType.StringType; defaultValue = "" },
+            navArgument("youtubeName") { type = NavType.StringType; defaultValue = "" }
+        )
+    ) { backStackEntry ->
+        currentRoute.value = "settings/channel_links"
+        showBottomNav.value = false
+        val decode = { name: String ->
+            backStackEntry.arguments?.getString(name)
+                ?.let { runCatching { java.net.URLDecoder.decode(it, "UTF-8") }.getOrDefault(it) }
+                .orEmpty()
+        }
+        io.github.aedev.flow.ui.screens.settings.ChannelLinksScreen(
+            onNavigateBack = { navController.popBackStack() },
+            prefilledYoutubeChannelId = decode("youtubeId"),
+            prefilledYoutubeChannelName = decode("youtubeName")
         )
     }
 
@@ -623,6 +647,9 @@ fun NavGraphBuilder.flowAppGraph(
             onPlaylistClick = { playlistId ->
                 navController.navigate("playlist/$playlistId")
             },
+            onLinkChannel = { channelId, channelName ->
+                navController.navigate(channelLinksRoute(channelId, channelName))
+            },
             onBackClick = { navController.popBackStack() }
         )
     }
@@ -641,7 +668,8 @@ fun NavGraphBuilder.flowAppGraph(
         PeerTubeChannelScreen(
             channelId = peerTubeChannelId,
             onVideoClick = { video -> navController.navigate("player/${video.id}") },
-            onBackClick = { navController.popBackStack() }
+            onBackClick = { navController.popBackStack() },
+            onOpenLinkedChannel = { linkedId -> navController.navigateToYoutubeChannel(linkedId) }
         )
     }
 

@@ -97,6 +97,13 @@ data class PTChannelDetailDto(
     val banners: List<PTAvatarDto> = emptyList(),
 )
 
+/** Channel search response of `GET /api/v1/search/video-channels`. */
+@Serializable
+data class PTChannelListDto(
+    val total: Int = 0,
+    val data: List<PTChannelDetailDto> = emptyList(),
+)
+
 /** Single-video detail response, used to resolve stream URLs lazily. */
 @Serializable
 data class PTVideoDetailDto(
