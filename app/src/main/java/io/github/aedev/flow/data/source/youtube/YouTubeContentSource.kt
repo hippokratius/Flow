@@ -54,8 +54,14 @@ class YouTubeContentSource @Inject constructor(
 
     override suspend fun video(id: ContentId): Video? = repository.getVideo(id.nativeId)
 
+    /**
+     * The default limit of six exists for the subscription feed, which asks many channels for a
+     * handful each. Here a single channel is asked, to find one specific upload among its recent
+     * ones — six would miss anything older than a couple of weeks. The page is fetched whole either
+     * way, so asking for more costs no extra request.
+     */
     override suspend fun channelUploads(id: ContentId, cursor: SourceCursor?): SourcePage<Video> =
-        SourcePage(repository.getChannelUploads(id.nativeId), null)
+        SourcePage(repository.getChannelUploads(id.nativeId, limitPerChannel = 20), null)
 
     /**
      * Null on purpose. YouTube playback keeps going through the existing InnerTube-versus-NewPipe
