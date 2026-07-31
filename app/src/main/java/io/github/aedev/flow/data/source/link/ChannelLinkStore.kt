@@ -62,6 +62,16 @@ class ChannelLinkStore @Inject constructor(
     val mirrorSubscriptions: Flow<Boolean> = context.tubeHubPreferencesDataStore.data
         .map { preferences -> preferences[KEY_MIRROR_SUBSCRIPTIONS] ?: true }
 
+    /**
+     * Whether tapping a YouTube video of a linked channel should open the PeerTube copy.
+     *
+     * On by default: moving one's viewing to the decentralised platform is the point of the app, and
+     * a feature that only works once found in settings mostly does not work. The switch is the
+     * permanent way out; the button under a redirected video is the one-off.
+     */
+    val redirectPlayback: Flow<Boolean> = context.tubeHubPreferencesDataStore.data
+        .map { preferences -> preferences[KEY_REDIRECT_PLAYBACK] ?: true }
+
     suspend fun currentLinks(): List<ChannelLink> = links.first()
 
     suspend fun forYouTube(youtubeChannelId: String): ChannelLink? =
@@ -78,6 +88,10 @@ class ChannelLinkStore @Inject constructor(
         context.tubeHubPreferencesDataStore.edit { it[KEY_MIRROR_SUBSCRIPTIONS] = enabled }
     }
 
+    suspend fun setRedirectPlayback(enabled: Boolean) {
+        context.tubeHubPreferencesDataStore.edit { it[KEY_REDIRECT_PLAYBACK] = enabled }
+    }
+
     private suspend fun update(transform: (List<ChannelLink>) -> List<ChannelLink>) {
         context.tubeHubPreferencesDataStore.edit { preferences ->
             val current = preferences[KEY_LINKS]
@@ -91,6 +105,7 @@ class ChannelLinkStore @Inject constructor(
         const val TAG = "ChannelLinkStore"
         val KEY_LINKS = stringPreferencesKey("channel_links")
         val KEY_MIRROR_SUBSCRIPTIONS = booleanPreferencesKey("channel_links_mirror_subscriptions")
+        val KEY_REDIRECT_PLAYBACK = booleanPreferencesKey("channel_links_redirect_playback")
         val linkListSerializer = ListSerializer(ChannelLink.serializer())
     }
 }

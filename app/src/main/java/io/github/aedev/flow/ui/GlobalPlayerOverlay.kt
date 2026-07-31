@@ -1238,8 +1238,7 @@ fun GlobalPlayerOverlay(
                                 EnhancedPlayerManager.getInstance().stop()
                                 onNavigateToShorts(clickedVideo.id)
                             } else {
-                                playerViewModel.playVideo(clickedVideo)
-                                GlobalPlayerState.setCurrentVideo(clickedVideo)
+                                playerViewModel.playVideoPreferringPeerTube(clickedVideo)
                             }
                         },
                         onChannelClick = { channelId ->

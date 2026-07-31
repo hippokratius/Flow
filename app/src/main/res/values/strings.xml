@@ -2513,4 +2513,9 @@
     <string name="peertube_channel_error">This channel could not be loaded.</string>
     <string name="peertube_channel_instance">on %1$s</string>
     <string name="peertube_channel_subscribers">%1$s subscribers</string>
+
+    <string name="channel_links_redirect_title">Open videos on PeerTube</string>
+    <string name="channel_links_redirect_description">When a linked channel has published the same video on PeerTube, that copy plays instead. You can switch back for a single video while watching it.</string>
+    <string name="playback_redirect_notice">Playing the PeerTube version</string>
+    <string name="playback_redirect_watch_on_youtube">Watch on YouTube</string>
 </resources>

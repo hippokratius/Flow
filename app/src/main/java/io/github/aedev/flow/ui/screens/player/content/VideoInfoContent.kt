@@ -374,6 +374,13 @@ fun VideoInfoContent(
         onOpenLinkedChannel = onChannelClick
     )
 
+    // Says so when the video playing is not the video that was tapped, and offers the way back.
+    io.github.aedev.flow.ui.components.PlaybackRedirectNotice(
+        isRedirected = uiState.redirectedFrom != null,
+        instanceHost = video.instanceHost,
+        onPlayOriginal = { viewModel.playRedirectOrigin() }
+    )
+
     if (uiState.isLiveChatAvailable) {
         io.github.aedev.flow.ui.components.LiveChatPreview(
             onClick = { screenState.showLiveChatSheet = true }

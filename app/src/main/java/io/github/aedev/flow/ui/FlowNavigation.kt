@@ -122,14 +122,14 @@ fun NavGraphBuilder.flowAppGraph(
                 if (video.isShort && !disableShortsPlayer) {
                     navController.navigate("shorts?startVideoId=${video.id}")
                 } else {
-                    playerViewModel.playVideo(video)
-                    GlobalPlayerState.setCurrentVideo(video)
+                    // No setCurrentVideo here: with a linked channel the video that starts may be
+                    // the PeerTube copy, and playVideo publishes whichever one that is.
+                    playerViewModel.playVideoPreferringPeerTube(video)
                 }
             },
             onShortClick = { video ->
                 if (disableShortsPlayer) {
-                    playerViewModel.playVideo(video)
-                    GlobalPlayerState.setCurrentVideo(video)
+                    playerViewModel.playVideoPreferringPeerTube(video)
                 } else {
                     navController.navigate("shorts?startVideoId=${video.id}")
                 }
@@ -203,8 +203,7 @@ fun NavGraphBuilder.flowAppGraph(
                 if (video.isShort && !disableShortsPlayer) {
                     navController.navigate("shorts?startVideoId=${video.id}")
                 } else {
-                    playerViewModel.playVideo(video)
-                    GlobalPlayerState.setCurrentVideo(video)
+                    playerViewModel.playVideoPreferringPeerTube(video)
                 }
             },
             onShortClick = { videoId ->

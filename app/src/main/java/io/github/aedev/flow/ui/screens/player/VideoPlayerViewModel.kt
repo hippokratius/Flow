@@ -93,7 +93,8 @@ class VideoPlayerViewModel @Inject constructor(
     private val sponsorBlockRepository: SponsorBlockRepository,
     private val liveChatRepository: io.github.aedev.flow.data.repository.LiveChatRepository,
     private val externalSourcePlaybackLoader: io.github.aedev.flow.player.source.ExternalSourcePlaybackLoader,
-    private val contentSourceRegistry: io.github.aedev.flow.data.source.ContentSourceRegistry
+    private val contentSourceRegistry: io.github.aedev.flow.data.source.ContentSourceRegistry,
+    private val channelLinkStore: io.github.aedev.flow.data.source.link.ChannelLinkStore
 ) : ViewModel() {
     
     private val _uiState = MutableStateFlow(VideoPlayerUiState())
@@ -144,10 +145,47 @@ class VideoPlayerViewModel @Inject constructor(
         const val LIVE_CHAT_MIN_DRIP_MS = 90L
         const val LIVE_CHAT_MAX_DRIP_MS = 250L
         const val SECONDARY_CONTENT_STARTUP_TIMEOUT_MS = 20_000L
+
+        /**
+         * How long a tap may wait for the PeerTube counterpart before the tapped video wins.
+         *
+         * Only linked channels ever wait, and the alternative to waiting is starting the wrong video
+         * — but a tap that does nothing visible is its own kind of broken, so the ceiling is short
+         * enough to stay inside "it took a moment".
+         */
+        const val REDIRECT_RESOLVE_TIMEOUT_MS = 2_500L
+        const val CHANNEL_UPLOADS_CACHE_TTL_MS = 5 * 60_000L
     }
 
     private val _canGoPrevious = MutableStateFlow(false)
     val canGoPrevious: StateFlow<Boolean> = _canGoPrevious.asStateFlow()
+
+    /*
+     * Cross-platform channel links, kept as a snapshot rather than read per tap.
+     *
+     * `playVideoPreferringPeerTube` has to decide *before* playback starts whether it is going
+     * anywhere else, and a DataStore read there would delay every video — including the large
+     * majority whose channel has no link at all. Collected once, answered from memory.
+     */
+    private val channelLinks: StateFlow<List<io.github.aedev.flow.data.source.link.ChannelLink>> =
+        channelLinkStore.links
+            .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    private val redirectPlaybackEnabled: StateFlow<Boolean> = channelLinkStore.redirectPlayback
+        .stateIn(viewModelScope, SharingStarted.Eagerly, true)
+
+    /**
+     * Videos the user sent back to YouTube by hand.
+     *
+     * Session-scoped on purpose: the button is a correction for the video in front of you, not a
+     * preference worth persisting and growing forever. The permanent form of "stay on YouTube" is
+     * the switch in the channel links screen.
+     */
+    private val optedOutOfRedirect = mutableSetOf<String>()
+
+    /** Channel id to (fetched at, uploads). See [channelUploadsCached]. */
+    private val channelUploadsCache =
+        java.util.concurrent.ConcurrentHashMap<String, Pair<Long, List<Video>>>()
 
     private val _expandPlayerRequest = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     val expandPlayerRequest: SharedFlow<Unit> = _expandPlayerRequest.asSharedFlow()
@@ -805,7 +843,9 @@ class VideoPlayerViewModel @Inject constructor(
             isSubscribed = false,
             likeState = null,
             isUpcoming = false,
-            upcomingReleaseTimeMs = null
+            upcomingReleaseTimeMs = null,
+            // Whoever redirected sets this again right after; every other path starts clean.
+            redirectedFrom = null
         )
         GlobalPlayerState.setCurrentVideo(video)
         GlobalPlayerState.setExplicitBackgroundPlaybackActive(false)
@@ -821,6 +861,83 @@ class VideoPlayerViewModel @Inject constructor(
         }
         // Start loading streams
         loadVideoInfo(video.id, isWifi = detectIsWifi(), forceRefresh = true)
+    }
+
+    /**
+     * Plays [video], or the same upload on PeerTube when the user has linked the two channels.
+     *
+     * The counterpart is resolved *before* [playVideo] rather than swapped in afterwards. Everything
+     * downstream of that call — watch history, the queue, the media notification, comments — keys off
+     * the video it was handed, so starting on YouTube and correcting course would leave the app
+     * playing one video while every record points at another.
+     *
+     * The cost of that ordering is that a linked channel waits for one request before playback
+     * starts. Nothing else does: [peerTubeCounterpartChannelId] answers from the in-memory link
+     * snapshot, so an unlinked video goes straight through, synchronously, exactly as before.
+     */
+    fun playVideoPreferringPeerTube(video: Video) {
+        val peerTubeChannelId = io.github.aedev.flow.data.source.link.peerTubeCounterpartChannelId(
+            video = video,
+            links = channelLinks.value,
+            redirectEnabled = redirectPlaybackEnabled.value,
+            optedOutVideoIds = optedOutOfRedirect,
+        )
+        if (peerTubeChannelId == null) {
+            playVideo(video)
+            return
+        }
+
+        viewModelScope.launch {
+            val counterpart = withTimeoutOrNull(REDIRECT_RESOLVE_TIMEOUT_MS) {
+                counterpartIn(peerTubeChannelId, video)
+            }
+            if (counterpart == null) {
+                // No match, instance unreachable, or too slow — the tapped video plays as tapped.
+                playVideo(video)
+            } else {
+                playVideo(counterpart)
+                _uiState.update { it.copy(redirectedFrom = video) }
+            }
+        }
+    }
+
+    /**
+     * Back to the version the user actually tapped, and stay there for this video.
+     *
+     * Without remembering the choice the next tap on the same video would redirect again, which
+     * would read as the button not working.
+     */
+    fun playRedirectOrigin() {
+        val origin = _uiState.value.redirectedFrom ?: return
+        optedOutOfRedirect.add(origin.id)
+        playVideo(origin)
+    }
+
+    /** The same upload as [video] among [channelId]'s uploads, or null. */
+    private suspend fun counterpartIn(channelId: String, video: Video): Video? {
+        val uploads = channelUploadsCached(channelId)
+        return io.github.aedev.flow.data.source.link.findCounterpart(video, uploads)
+    }
+
+    /**
+     * A channel's recent uploads, briefly cached.
+     *
+     * Watching a linked channel means tapping several of its videos in a row, and each tap would
+     * otherwise re-fetch the same page before playback could start. The TTL is what keeps a video
+     * uploaded minutes ago from staying invisible to the pairing for the rest of the session.
+     */
+    private suspend fun channelUploadsCached(channelId: String): List<Video> {
+        val now = System.currentTimeMillis()
+        channelUploadsCache[channelId]?.let { (fetchedAt, videos) ->
+            if (now - fetchedAt < CHANNEL_UPLOADS_CACHE_TTL_MS) return videos
+        }
+        val id = channelId.contentId
+        val source = contentSourceRegistry.forId(id) ?: return emptyList()
+        val videos = runCatching { source.channelUploads(id).items }
+            .onFailure { Log.d("VideoPlayerViewModel", "Channel uploads for $channelId failed", it) }
+            .getOrDefault(emptyList())
+        if (videos.isNotEmpty()) channelUploadsCache[channelId] = now to videos
+        return videos
     }
 
     fun playLocalVideo(video: Video, contentUri: String) {
@@ -858,7 +975,8 @@ class VideoPlayerViewModel @Inject constructor(
             upcomingReleaseTimeMs = null,
             localFilePath = contentUri,
             localFileVideoId = video.id,
-            offlineSponsorBlockSegments = null
+            offlineSponsorBlockSegments = null,
+            redirectedFrom = null
         )
         GlobalPlayerState.setCurrentVideo(video)
         GlobalPlayerState.setExplicitBackgroundPlaybackActive(false)
@@ -1046,7 +1164,8 @@ class VideoPlayerViewModel @Inject constructor(
                 likeState = null,
                 queueTitle = title,
                 isUpcoming = false,
-                upcomingReleaseTimeMs = null
+                upcomingReleaseTimeMs = null,
+                redirectedFrom = null
             )
         }
         saveHistoryEntry(startVideo)
@@ -1066,8 +1185,9 @@ class VideoPlayerViewModel @Inject constructor(
         val handledByPlayer = EnhancedPlayerManager.getInstance().playNext(loadStreamsInPlayer = false)
         if (!handledByPlayer) {
             _uiState.value.relatedVideos.firstOrNull()?.let { nextVideo ->
-                playVideo(nextVideo)
-                io.github.aedev.flow.player.GlobalPlayerState.setCurrentVideo(nextVideo)
+                // Autoplay follows the same rule as a tap; setCurrentVideo is left to playVideo,
+                // which knows which version actually started.
+                playVideoPreferringPeerTube(nextVideo)
             }
         }
     }
@@ -3359,7 +3479,14 @@ data class VideoPlayerUiState(
     val isLive: Boolean = false,
     val isLiveChatAvailable: Boolean = false,
     val liveChatMessages: List<io.github.aedev.flow.data.model.LiveChatMessage> = emptyList(),
-    val isLiveChatLoading: Boolean = false
+    val isLiveChatLoading: Boolean = false,
+    /**
+     * The YouTube video the user tapped when playback was redirected to its PeerTube copy.
+     *
+     * Non-null means "what is playing is not what was tapped" — the one state the notice row under
+     * the video needs, and the video to go back to when the user declines the redirect.
+     */
+    val redirectedFrom: Video? = null
 )
 
 data class SubtitleInfo(

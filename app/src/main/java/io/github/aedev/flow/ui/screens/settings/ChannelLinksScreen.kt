@@ -93,6 +93,7 @@ fun ChannelLinksScreen(
 ) {
     val links by viewModel.links.collectAsState()
     val mirrorSubscriptions by viewModel.mirrorSubscriptions.collectAsState()
+    val redirectPlayback by viewModel.redirectPlayback.collectAsState()
     val search by viewModel.searchState.collectAsState()
     val subscribedChannels by viewModel.subscribedChannels.collectAsState()
     val suggestedPeerTube by viewModel.suggestedPeerTubeChannels.collectAsState()
@@ -372,6 +373,29 @@ fun ChannelLinksScreen(
                             onCheckedChange = viewModel::setMirrorSubscriptions
                         )
                     }
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = stringResource(R.string.channel_links_redirect_title),
+                                style = MaterialTheme.typography.bodyLarge
+                            )
+                            Text(
+                                text = stringResource(R.string.channel_links_redirect_description),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = redirectPlayback,
+                            onCheckedChange = viewModel::setRedirectPlayback
+                        )
+                    }
                 }
             }
 
@@ -501,6 +525,9 @@ class ChannelLinksViewModel @Inject constructor(
     val mirrorSubscriptions: StateFlow<Boolean> = store.mirrorSubscriptions
         .stateIn(viewModelScope, SharingStarted.Eagerly, true)
 
+    val redirectPlayback: StateFlow<Boolean> = store.redirectPlayback
+        .stateIn(viewModelScope, SharingStarted.Eagerly, true)
+
     private val _searchState = MutableStateFlow(ChannelSearchState())
     val searchState: StateFlow<ChannelSearchState> = _searchState.asStateFlow()
 
@@ -548,6 +575,10 @@ class ChannelLinksViewModel @Inject constructor(
 
     fun setMirrorSubscriptions(enabled: Boolean) {
         viewModelScope.launch { store.setMirrorSubscriptions(enabled) }
+    }
+
+    fun setRedirectPlayback(enabled: Boolean) {
+        viewModelScope.launch { store.setRedirectPlayback(enabled) }
     }
 }
 
