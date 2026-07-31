@@ -237,7 +237,10 @@ fun VideoInfoContent(
         title = resolvedVideoTitle,
         viewCount = uiState.streamInfo?.viewCount ?: video.viewCount,
         uploadDate = streamUploadDate ?: video.uploadDate,
-        description = uiState.streamInfo?.description?.content ?: video.description,
+        // The source tab points the description at the other copy; without it, the playing one.
+        description = uiState.infoVideo?.description
+            ?: uiState.streamInfo?.description?.content
+            ?: video.description,
         isUpcoming = uiState.isUpcoming,
         channelName = resolvedChannelName,
         channelAvatarUrl = uiState.channelAvatarUrl ?: video.channelThumbnailUrl,
@@ -379,6 +382,15 @@ fun VideoInfoContent(
         isRedirected = uiState.redirectedFrom != null,
         instanceHost = video.instanceHost,
         onPlayOriginal = { viewModel.playRedirectOrigin() }
+    )
+
+    // Description and comments from the other copy of this upload, when there is one.
+    val counterpartVideo by viewModel.counterpartVideo.collectAsState()
+    io.github.aedev.flow.ui.components.VideoSourceTabs(
+        playingVideo = video,
+        counterpartVideo = counterpartVideo,
+        selectedVideoId = uiState.infoVideo?.id ?: video.id,
+        onSelect = { viewModel.showInfoFor(it) }
     )
 
     if (uiState.isLiveChatAvailable) {

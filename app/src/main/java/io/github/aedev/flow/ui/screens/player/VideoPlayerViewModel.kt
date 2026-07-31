@@ -187,6 +187,21 @@ class VideoPlayerViewModel @Inject constructor(
     private val channelUploadsCache =
         java.util.concurrent.ConcurrentHashMap<String, Pair<Long, List<Video>>>()
 
+    /**
+     * The same upload on the other platform, for the video currently playing.
+     *
+     * Drives the source tab. Resolved in the background and allowed to fail: a missing counterpart
+     * simply means no tab, which is also the state of every video whose channel is not linked.
+     *
+     * Declared above `init` because the collector there runs on `Dispatchers.Main.immediate` and can
+     * therefore reach [resolveCounterpart] while the constructor is still running.
+     */
+    private val _counterpartVideo = MutableStateFlow<Video?>(null)
+    val counterpartVideo: StateFlow<Video?> = _counterpartVideo.asStateFlow()
+
+    private var counterpartJob: Job? = null
+    private var counterpartForVideoId: String? = null
+
     private val _expandPlayerRequest = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     val expandPlayerRequest: SharedFlow<Unit> = _expandPlayerRequest.asSharedFlow()
 
@@ -549,6 +564,72 @@ class VideoPlayerViewModel @Inject constructor(
                 _uiState.update { it.copy(isUpcomingReminderSet = isReminderSet) }
             }
         }
+
+        // Is the same upload available on the other platform? Answered per played video.
+        // Combined with the links so a video started before the store had loaded — or while the
+        // user was linking its channel — still gets its tab.
+        viewModelScope.launch {
+            combine(
+                uiState.map { it.cachedVideo }.distinctUntilChangedBy { it?.id },
+                channelLinks
+            ) { video, _ -> video }
+                .collect { video -> resolveCounterpart(video) }
+        }
+    }
+
+    private fun resolveCounterpart(video: Video?) {
+        // Already answered for this video. Re-running would blank the tab — and with it the source
+        // the user has selected — for a link list that merely re-emitted.
+        if (video != null && counterpartForVideoId == video.id && _counterpartVideo.value != null) {
+            return
+        }
+        counterpartJob?.cancel()
+        counterpartForVideoId = video?.id
+        _counterpartVideo.value = null
+        if (video == null || video.title.isBlank() || video.duration <= 0) return
+        if (video.channelId.isBlank()) return
+
+        val counterpartChannelId =
+            io.github.aedev.flow.data.source.link.ChannelLinks.counterpart(
+                channelLinks.value,
+                video.channelId,
+            ) ?: return
+
+        counterpartJob = viewModelScope.launch {
+            val found = counterpartIn(counterpartChannelId, video) ?: return@launch
+            if (_uiState.value.cachedVideo?.id != video.id) return@launch
+            _counterpartVideo.value = found
+        }
+    }
+
+    /**
+     * Shows the description and comments of [videoId] — either the playing video or its counterpart.
+     *
+     * Reloads rather than keeping both sides in memory. One comment list, one description, one
+     * source at a time: the alternative doubles the state in the most tangled ViewModel in the app
+     * and the user cannot tell the difference.
+     */
+    fun showInfoFor(videoId: String) {
+        val playing = _uiState.value.cachedVideo ?: return
+        if (videoId == playing.id) {
+            _uiState.update { it.copy(infoVideo = null) }
+            loadComments(playing.id)
+            return
+        }
+
+        val counterpart = _counterpartVideo.value?.takeIf { it.id == videoId } ?: return
+        // Shown immediately from what the pairing already knows; the full text replaces it below.
+        _uiState.update { it.copy(infoVideo = counterpart) }
+        loadComments(counterpart.id)
+        viewModelScope.launch {
+            val id = counterpart.id.contentId
+            val full = contentSourceRegistry.forId(id)
+                ?.let { source -> runCatching { source.video(id) }.getOrNull() }
+                ?: return@launch
+            if (_uiState.value.infoVideo?.id == counterpart.id) {
+                _uiState.update { it.copy(infoVideo = full) }
+            }
+        }
     }
     
     fun initializeViewHistory(context: Context) {
@@ -845,7 +926,8 @@ class VideoPlayerViewModel @Inject constructor(
             isUpcoming = false,
             upcomingReleaseTimeMs = null,
             // Whoever redirected sets this again right after; every other path starts clean.
-            redirectedFrom = null
+            redirectedFrom = null,
+            infoVideo = null
         )
         GlobalPlayerState.setCurrentVideo(video)
         GlobalPlayerState.setExplicitBackgroundPlaybackActive(false)
@@ -976,7 +1058,8 @@ class VideoPlayerViewModel @Inject constructor(
             localFilePath = contentUri,
             localFileVideoId = video.id,
             offlineSponsorBlockSegments = null,
-            redirectedFrom = null
+            redirectedFrom = null,
+            infoVideo = null
         )
         GlobalPlayerState.setCurrentVideo(video)
         GlobalPlayerState.setExplicitBackgroundPlaybackActive(false)
@@ -1165,7 +1248,8 @@ class VideoPlayerViewModel @Inject constructor(
                 queueTitle = title,
                 isUpcoming = false,
                 upcomingReleaseTimeMs = null,
-                redirectedFrom = null
+                redirectedFrom = null,
+                infoVideo = null
             )
         }
         saveHistoryEntry(startVideo)
@@ -3127,6 +3211,16 @@ class VideoPlayerViewModel @Inject constructor(
         EnhancedPlayerManager.getInstance().toggleLoop(enabled)
     }
 
+    /**
+     * The video the comment list is meant to be showing.
+     *
+     * Normally the one playing. While the source tab points at the counterpart it is that video
+     * instead — otherwise the stale-result guards in [loadComments] would discard the very comments
+     * the tab just asked for, since they belong to a video that is not playing.
+     */
+    private fun commentsTargetVideoId(): String? =
+        _uiState.value.infoVideo?.id ?: _uiState.value.cachedVideo?.id
+
     fun loadComments(videoId: String) {
         if (isLocalMediaId(videoId)) {
             _commentsState.value = emptyList()
@@ -3149,7 +3243,7 @@ class VideoPlayerViewModel @Inject constructor(
                         )
                     }
                 }
-                if (_uiState.value.cachedVideo?.id != videoId) return@launch
+                if (commentsTargetVideoId() != videoId) return@launch
                 // A federated video's comments live on its instance. Before this, the YouTube
                 // extractor was handed a `peertube_…` id, failed, and the video simply had no
                 // comments — with the failure only in the log.
@@ -3159,7 +3253,7 @@ class VideoPlayerViewModel @Inject constructor(
                 } else {
                     repository.getComments(videoId)
                 }
-                if (_uiState.value.cachedVideo?.id != videoId) return@launch
+                if (commentsTargetVideoId() != videoId) return@launch
                 _commentsState.value = comments.distinctByNonBlankKey(Comment::id)
                 commentsNextPage = nextPage
                 _hasMoreComments.value = nextPage != null
@@ -3174,10 +3268,13 @@ class VideoPlayerViewModel @Inject constructor(
     fun loadMoreComments(videoId: String) {
         val nextPage = commentsNextPage ?: return
         if (_isLoadingMoreComments.value) return
+        // Callers pass the playing video's id. While the source tab shows the counterpart, the
+        // comment list on screen is that video's, and so is the page token.
+        val targetId = _uiState.value.infoVideo?.id ?: videoId
         viewModelScope.launch {
             _isLoadingMoreComments.value = true
             try {
-                val (newComments, newNextPage) = repository.getMoreComments(videoId, nextPage)
+                val (newComments, newNextPage) = repository.getMoreComments(targetId, nextPage)
                 _commentsState.value = _commentsState.value.mergeDistinctByNonBlankKey(
                     newComments,
                     Comment::id
@@ -3486,7 +3583,14 @@ data class VideoPlayerUiState(
      * Non-null means "what is playing is not what was tapped" — the one state the notice row under
      * the video needs, and the video to go back to when the user declines the redirect.
      */
-    val redirectedFrom: Video? = null
+    val redirectedFrom: Video? = null,
+    /**
+     * The counterpart whose description and comments the source tab is showing.
+     *
+     * Null — the normal case — means the playing video's own. Never changes what plays; sharing,
+     * copying a link and the watch history all stay on [cachedVideo].
+     */
+    val infoVideo: Video? = null
 )
 
 data class SubtitleInfo(
