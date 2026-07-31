@@ -2515,9 +2515,8 @@
     <string name="peertube_channel_subscribers">%1$s subscribers</string>
 
     <string name="channel_links_redirect_title">Open videos on PeerTube</string>
-    <string name="channel_links_redirect_description">When a linked channel has published the same video on PeerTube, that copy plays instead. You can switch back for a single video while watching it.</string>
-    <string name="playback_redirect_notice">Playing the PeerTube version</string>
-    <string name="playback_redirect_watch_on_youtube">Watch on YouTube</string>
+    <string name="channel_links_redirect_description">When a linked channel has published the same video on PeerTube, that copy plays instead. While watching, the player settings let you switch a single video back.</string>
+    <string name="playback_source">Playback source</string>
     <string name="video_source_peertube">PeerTube</string>
     <string name="video_source_youtube">YouTube</string>
 </resources>

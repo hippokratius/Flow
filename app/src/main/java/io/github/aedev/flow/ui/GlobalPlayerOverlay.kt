@@ -55,6 +55,7 @@ import io.github.aedev.flow.player.EnhancedPlayerManager
 import io.github.aedev.flow.player.GlobalPlayerState
 import io.github.aedev.flow.player.PlayerHardwareController
 import io.github.aedev.flow.ui.components.DraggablePlayerLayout
+import io.github.aedev.flow.ui.components.videoSourceLabel
 import io.github.aedev.flow.ui.components.PlayerDraggableState
 import io.github.aedev.flow.ui.components.rememberPlayerDraggableState
 import io.github.aedev.flow.ui.components.PlayerSheetValue
@@ -514,6 +515,7 @@ fun GlobalPlayerOverlay(
         )
     }
     
+    val playbackCounterpart by playerViewModel.counterpartVideo.collectAsState()
     val globalCurrentVideo by GlobalPlayerState.currentVideo.collectAsState()
     LaunchedEffect(globalCurrentVideo?.id) {
         val current = globalCurrentVideo
@@ -1432,6 +1434,9 @@ fun GlobalPlayerOverlay(
                         expandedHeight = fullscreenSidePanelHeight,
                         enableVerticalDismiss = false,
                         useGroupedQualitySelector = groupedQualitySelectorEnabled,
+                        // Only offered when this upload exists on both platforms; null hides the row.
+                        playbackSourceLabel = if (playbackCounterpart != null) videoSourceLabel(video) else null,
+                        onPlaybackSourceClick = { playerViewModel.switchPlaybackSource() },
                         modifier = Modifier.fillMaxSize()
                     )
                 } else if (screenState.showChaptersSheet) {

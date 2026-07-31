@@ -71,6 +71,13 @@ fun SettingsMenuDialog(
     enableVerticalDismiss: Boolean = true,
     useGroupedQualitySelector: Boolean = false,
     onSheetProgressChange: (Float) -> Unit = {},
+    /**
+     * Name of the source this video is playing from — a PeerTube instance, or "YouTube". Null means
+     * there is nothing to switch to, and the row is left out entirely; that is every video whose
+     * channel is not linked, which is most of them.
+     */
+    playbackSourceLabel: String? = null,
+    onPlaybackSourceClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val configuration = LocalConfiguration.current
@@ -276,6 +283,19 @@ fun SettingsMenuDialog(
                     currentPage = PlayerSettingsPage.Quality
                 }
             )
+
+            // ── Playback source ──
+            // Which copy of this upload actually plays. Separate from the switch under the title,
+            // which only changes what is read: swapping the stream restarts the video, and that is
+            // not something to do by accident while reading the other side's comments.
+            if (playbackSourceLabel != null) {
+                PlayerSettingsNavRow(
+                    icon = Icons.Filled.Hub,
+                    label = stringResource(R.string.playback_source),
+                    value = playbackSourceLabel,
+                    onClick = { animateToDismiss(onPlaybackSourceClick) }
+                )
+            }
 
             // ── Playback Speed ──
             PlayerSettingsSectionHeader(stringResource(R.string.playback_header))

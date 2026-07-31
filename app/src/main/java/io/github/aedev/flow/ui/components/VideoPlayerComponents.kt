@@ -90,6 +90,13 @@ fun VideoInfoSection(
     onDescriptionClick: () -> Unit,
     isSaved: Boolean = false,
     isDownloaded: Boolean = false,
+    /**
+     * Rendered between the title and the view count, where TubeHub puts the PeerTube/YouTube
+     * switch. A slot rather than four more parameters: this composable already takes 25, and it has
+     * no business knowing what a content source is — everything below simply receives the values of
+     * whichever side the caller selected.
+     */
+    sourceSwitch: (@Composable () -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     var showCollaborators by remember { mutableStateOf(false) }
@@ -145,6 +152,8 @@ fun VideoInfoSection(
             )
         )
         
+        sourceSwitch?.invoke()
+
         // View count and date in a subtle row below title
         Row(
             modifier = Modifier

@@ -37,6 +37,19 @@ import io.github.aedev.flow.data.source.contentId
  * Renders nothing when there is no counterpart, which is every video of an unlinked channel — so it
  * can sit unconditionally in the info panel.
  */
+/**
+ * What to call this video's source in one word: the instance for a federated video, "YouTube"
+ * otherwise. The instance says more than "PeerTube" does — which server a video came from is the
+ * part that actually varies.
+ */
+@Composable
+fun videoSourceLabel(video: Video): String =
+    if (video.id.contentId.kind == SourceKind.PEERTUBE) {
+        video.instanceHost?.takeIf { it.isNotBlank() } ?: stringResource(R.string.video_source_peertube)
+    } else {
+        stringResource(R.string.video_source_youtube)
+    }
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun VideoSourceTabs(
@@ -51,27 +64,21 @@ fun VideoSourceTabs(
     val options = listOf(playingVideo, counterpartVideo)
         .sortedBy { it.id.contentId.kind != SourceKind.PEERTUBE }
 
+    // No horizontal padding: this sits inside VideoInfoSection's own padded column, aligned with
+    // the title above it and the view count below.
     SingleChoiceSegmentedButtonRow(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
+            .padding(top = 8.dp, bottom = 4.dp),
     ) {
         options.forEachIndexed { index, option ->
-            val isPeerTube = option.id.contentId.kind == SourceKind.PEERTUBE
             SegmentedButton(
                 selected = option.id == selectedVideoId,
                 onClick = { onSelect(option.id) },
                 shape = SegmentedButtonDefaults.itemShape(index = index, count = options.size),
                 label = {
                     Text(
-                        text = if (isPeerTube) {
-                            // The instance says more than the word "PeerTube" does — it is where
-                            // the comments the user is about to read actually live.
-                            option.instanceHost?.takeIf { it.isNotBlank() }
-                                ?: stringResource(R.string.video_source_peertube)
-                        } else {
-                            stringResource(R.string.video_source_youtube)
-                        },
+                        text = videoSourceLabel(option),
                         style = MaterialTheme.typography.labelMedium,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,

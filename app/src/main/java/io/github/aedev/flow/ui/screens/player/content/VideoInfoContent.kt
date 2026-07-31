@@ -46,10 +46,20 @@ import io.github.aedev.flow.ui.screens.player.VideoPlayerViewModel
 import io.github.aedev.flow.data.model.Comment
 import io.github.aedev.flow.ui.components.AddToPlaylistDialog
 import io.github.aedev.flow.ui.components.VideoInfoSection
+import io.github.aedev.flow.ui.components.VideoSourceTabs
 import io.github.aedev.flow.ui.screens.player.state.PlayerScreenState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import org.schabi.newpipe.extractor.stream.StreamType
+
+/**
+ * The playing video's channel id, preferring the extraction over the feed item.
+ *
+ * Was repeated at five call sites inside [VideoInfoContent]; pulled out when the source switch made
+ * each of them read "the channel of the side currently shown" instead.
+ */
+private fun channelIdOf(uiState: VideoPlayerUiState, video: Video): String =
+    uiState.streamInfo?.uploaderUrl?.substringAfterLast("/") ?: video.channelId
 
 @Composable
 fun VideoInfoContent(
@@ -232,100 +242,115 @@ fun VideoInfoContent(
         )
     }
 
+    /*
+     * The PeerTube/YouTube switch under the title selects which copy of this upload the panel below
+     * describes. `shownVideo` is non-null only while the counterpart is selected — in every other
+     * case, including every video that has no counterpart at all, the arguments below are exactly
+     * what they were before the switch existed.
+     *
+     * `streamInfo` never applies to the counterpart: it is the NewPipe extraction of the video that
+     * is *playing*.
+     */
+    val counterpartVideo by viewModel.counterpartVideo.collectAsState()
+    val shownVideo = uiState.infoVideo
+    val shown = shownVideo ?: video
+    val shownChannelId = if (shownVideo != null) shownVideo.channelId else channelIdOf(uiState, video)
+    val shownChannelName = if (shownVideo != null) shownVideo.channelName else resolvedChannelName
+    val shownChannelThumb = if (shownVideo != null) {
+        shownVideo.channelThumbnailUrl
+    } else {
+        uiState.channelAvatarUrl?.takeIf { it.isNotEmpty() } ?: video.channelThumbnailUrl
+    }
+    val shownLikeState = if (shownVideo != null) uiState.infoLikeState else uiState.likeState
+    val shownIsSubscribed = if (shownVideo != null) uiState.infoSubscribed else uiState.isSubscribed
+
+    val toggleShownSubscription = {
+        viewModel.toggleSubscription(shownChannelId, shownChannelName, shownChannelThumb)
+    }
+
     VideoInfoSection(
-        video = video,
+        video = shown,
         title = resolvedVideoTitle,
-        viewCount = uiState.streamInfo?.viewCount ?: video.viewCount,
-        uploadDate = streamUploadDate ?: video.uploadDate,
-        // The source tab points the description at the other copy; without it, the playing one.
-        description = uiState.infoVideo?.description
-            ?: uiState.streamInfo?.description?.content
-            ?: video.description,
-        isUpcoming = uiState.isUpcoming,
-        channelName = resolvedChannelName,
-        channelAvatarUrl = uiState.channelAvatarUrl ?: video.channelThumbnailUrl,
-        channelAvatarUrls = video.channelThumbnailUrls,
-        collaborators = resolvedCollaborators,
-        subscriberCount = uiState.channelSubscriberCount,
-        isSubscribed = uiState.isSubscribed,
-        isNotificationsEnabled = uiState.isNotificationsEnabled,
-        likeState = uiState.likeState ?: "NONE",
-        likeCount = uiState.streamInfo?.likeCount ?: video.likeCount,
-        dislikeCount = uiState.dislikeCount,
+        sourceSwitch = {
+            VideoSourceTabs(
+                playingVideo = video,
+                counterpartVideo = counterpartVideo,
+                selectedVideoId = shown.id,
+                onSelect = { viewModel.showInfoFor(it) }
+            )
+        },
+        viewCount = if (shownVideo != null) shown.viewCount else (uiState.streamInfo?.viewCount ?: video.viewCount),
+        uploadDate = if (shownVideo != null) shown.uploadDate else (streamUploadDate ?: video.uploadDate),
+        description = if (shownVideo != null) {
+            shown.description
+        } else {
+            uiState.streamInfo?.description?.content ?: video.description
+        },
+        isUpcoming = uiState.isUpcoming && shownVideo == null,
+        channelName = shownChannelName,
+        channelAvatarUrl = shownChannelThumb,
+        channelAvatarUrls = if (shownVideo != null) emptyList() else video.channelThumbnailUrls,
+        // Collaborators come out of the YouTube extraction of the playing video.
+        collaborators = if (shownVideo != null) emptyList() else resolvedCollaborators,
+        subscriberCount = if (shownVideo != null) uiState.infoChannel?.subscriberCount else uiState.channelSubscriberCount,
+        isSubscribed = shownIsSubscribed,
+        isNotificationsEnabled = uiState.isNotificationsEnabled && shownVideo == null,
+        likeState = shownLikeState ?: "NONE",
+        likeCount = if (shownVideo != null) shown.likeCount else (uiState.streamInfo?.likeCount ?: video.likeCount),
+        // Only YouTube has one, and it belongs to the playing video's extraction.
+        dislikeCount = if (shownVideo != null) null else uiState.dislikeCount,
         onLikeClick = {
-            val streamInfo = uiState.streamInfo
-            val thumbnailUrl = streamInfo?.thumbnails?.maxByOrNull { it.height }?.url ?: video.thumbnailUrl
-            
-            when (uiState.likeState) {
-                "LIKED" -> viewModel.removeLikeState(video.id)
+            val thumbnailUrl = if (shownVideo != null) {
+                shown.thumbnailUrl
+            } else {
+                uiState.streamInfo?.thumbnails?.maxByOrNull { it.height }?.url ?: video.thumbnailUrl
+            }
+            when (shownLikeState) {
+                "LIKED" -> viewModel.removeLikeState(shown.id)
                 else -> viewModel.likeVideo(
-                    video.id,
-                    resolvedVideoTitle,
+                    shown.id,
+                    if (shownVideo != null) shown.title else resolvedVideoTitle,
                     thumbnailUrl,
-                    streamInfo?.uploaderName ?: video.channelName
+                    shownChannelName
                 )
             }
         },
         onDislikeClick = {
-            when (uiState.likeState) {
-                "DISLIKED" -> viewModel.removeLikeState(video.id)
-                else -> viewModel.dislikeVideo(video.id)
+            when (shownLikeState) {
+                "DISLIKED" -> viewModel.removeLikeState(shown.id)
+                else -> viewModel.dislikeVideo(shown.id)
             }
         },
         onSubscribeClick = {
-            uiState.streamInfo?.let { streamInfo ->
-                val channelIdSafe = streamInfo.uploaderUrl?.substringAfterLast("/") ?: video.channelId
-                val channelNameSafe = streamInfo.uploaderName ?: video.channelName
-                // Use the fetched channel avatar URL if available, otherwise fallback to existing video thumbnail as last resort 
-                // but checking for uploaderUrl is wrong as it is a web link.
-                val channelThumbSafe = uiState.channelAvatarUrl?.takeIf { it.isNotEmpty() } 
-                    ?: video.channelThumbnailUrl?.takeIf { it.isNotEmpty() }
-                    ?: ""
-                
-                viewModel.toggleSubscription(channelIdSafe, channelNameSafe, channelThumbSafe)
-                
-                scope.launch {
-                    val message = if (uiState.isSubscribed) 
-                        context.getString(R.string.unsubscribed_from, channelNameSafe) 
-                    else 
-                        context.getString(R.string.subscribed_to, channelNameSafe)
-                        
-                    val result = snackbarHostState.showSnackbar(
-                        message, 
-                        actionLabel = if (uiState.isSubscribed) context.getString(R.string.undo) else null
-                    )
-                    
-                    if (result == SnackbarResult.ActionPerformed && uiState.isSubscribed) {
-                        viewModel.toggleSubscription(channelIdSafe, channelNameSafe, channelThumbSafe)
-                    }
+            toggleShownSubscription()
+            scope.launch {
+                val message = if (shownIsSubscribed)
+                    context.getString(R.string.unsubscribed_from, shownChannelName)
+                else
+                    context.getString(R.string.subscribed_to, shownChannelName)
+
+                val result = snackbarHostState.showSnackbar(
+                    message,
+                    actionLabel = if (shownIsSubscribed) context.getString(R.string.undo) else null
+                )
+
+                if (result == SnackbarResult.ActionPerformed && shownIsSubscribed) {
+                    toggleShownSubscription()
                 }
             }
         },
         onUnsubscribeClick = {
-            uiState.streamInfo?.let { streamInfo ->
-                val channelIdSafe = streamInfo.uploaderUrl?.substringAfterLast("/") ?: video.channelId
-                val channelNameSafe = streamInfo.uploaderName ?: video.channelName
-                val channelThumbSafe = uiState.channelAvatarUrl?.takeIf { it.isNotEmpty() }
-                    ?: video.channelThumbnailUrl?.takeIf { it.isNotEmpty() }
-                    ?: ""
-                viewModel.toggleSubscription(channelIdSafe, channelNameSafe, channelThumbSafe)
-                scope.launch {
-                    snackbarHostState.showSnackbar(
-                        context.getString(R.string.unsubscribed_from, channelNameSafe)
-                    )
-                }
+            toggleShownSubscription()
+            scope.launch {
+                snackbarHostState.showSnackbar(
+                    context.getString(R.string.unsubscribed_from, shownChannelName)
+                )
             }
         },
         onNotificationChange = { enabled ->
-            val channelIdSafe = uiState.streamInfo?.uploaderUrl?.substringAfterLast("/") ?: video.channelId
-            viewModel.setNotificationEnabled(channelIdSafe, enabled)
+            viewModel.setNotificationEnabled(shownChannelId, enabled)
         },
-        onChannelClick = {
-            uiState.streamInfo?.let { streamInfo ->
-                val channelIdSafe = streamInfo.uploaderUrl?.substringAfterLast("/") ?: video.channelId
-                onChannelClick(channelIdSafe)
-            } ?: onChannelClick(video.channelId)
-        },
+        onChannelClick = { onChannelClick(shownChannelId) },
         onCollaboratorClick = onChannelClick,
         onSaveClick = { showAddToPlaylistDialog = true },
         onShareClick = {
@@ -371,26 +396,11 @@ fun VideoInfoContent(
     }
 
     // "This creator also publishes on PeerTube", when the user has said so. Renders nothing
-    // otherwise, so it costs an unlinked channel nothing but a lookup in a cached list.
+    // otherwise, so it costs an unlinked channel nothing but a lookup in a cached list. Shown for
+    // the channel on screen, which the switch above may have changed.
     io.github.aedev.flow.ui.components.LinkedChannelRow(
-        channelId = video.channelId,
+        channelId = shownChannelId,
         onOpenLinkedChannel = onChannelClick
-    )
-
-    // Says so when the video playing is not the video that was tapped, and offers the way back.
-    io.github.aedev.flow.ui.components.PlaybackRedirectNotice(
-        isRedirected = uiState.redirectedFrom != null,
-        instanceHost = video.instanceHost,
-        onPlayOriginal = { viewModel.playRedirectOrigin() }
-    )
-
-    // Description and comments from the other copy of this upload, when there is one.
-    val counterpartVideo by viewModel.counterpartVideo.collectAsState()
-    io.github.aedev.flow.ui.components.VideoSourceTabs(
-        playingVideo = video,
-        counterpartVideo = counterpartVideo,
-        selectedVideoId = uiState.infoVideo?.id ?: video.id,
-        onSelect = { viewModel.showInfoFor(it) }
     )
 
     if (uiState.isLiveChatAvailable) {

@@ -5,6 +5,7 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import io.github.aedev.flow.data.local.*
+import io.github.aedev.flow.data.model.Channel
 import io.github.aedev.flow.data.model.Video
 import io.github.aedev.flow.data.model.Comment
 import io.github.aedev.flow.data.model.distinctByNonBlankKey
@@ -201,6 +202,9 @@ class VideoPlayerViewModel @Inject constructor(
 
     private var counterpartJob: Job? = null
     private var counterpartForVideoId: String? = null
+
+    /** Everything loaded for the counterpart while the source switch points at it. */
+    private var infoSideJob: Job? = null
 
     private val _expandPlayerRequest = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     val expandPlayerRequest: SharedFlow<Unit> = _expandPlayerRequest.asSharedFlow()
@@ -584,8 +588,15 @@ class VideoPlayerViewModel @Inject constructor(
             return
         }
         counterpartJob?.cancel()
+        // The old counterpart's subscription and like collectors have nothing left to describe.
+        infoSideJob?.cancel()
         counterpartForVideoId = video?.id
         _counterpartVideo.value = null
+        if (_uiState.value.infoVideo != null) {
+            _uiState.update {
+                it.copy(infoVideo = null, infoChannel = null, infoLikeState = null)
+            }
+        }
         if (video == null || video.title.isBlank() || video.duration <= 0) return
         if (video.channelId.isBlank()) return
 
@@ -603,33 +614,77 @@ class VideoPlayerViewModel @Inject constructor(
     }
 
     /**
-     * Shows the description and comments of [videoId] — either the playing video or its counterpart.
+     * Shows the metadata of [videoId] — either the playing video or its counterpart.
      *
-     * Reloads rather than keeping both sides in memory. One comment list, one description, one
-     * source at a time: the alternative doubles the state in the most tangled ViewModel in the app
-     * and the user cannot tell the difference.
+     * Everything the info panel renders below the title follows this: views, date, description,
+     * channel with its follower count, like counts, comments. Reloads rather than keeping both sides
+     * in memory — one source at a time, which is far less new state in the most tangled ViewModel in
+     * the app and, for the user, indistinguishable.
+     *
+     * Playback does not move. That is chosen separately, in the player's settings menu.
      */
     fun showInfoFor(videoId: String) {
         val playing = _uiState.value.cachedVideo ?: return
+        infoSideJob?.cancel()
+
         if (videoId == playing.id) {
-            _uiState.update { it.copy(infoVideo = null) }
+            _uiState.update { it.copy(infoVideo = null, infoChannel = null, infoLikeState = null) }
             loadComments(playing.id)
             return
         }
 
         val counterpart = _counterpartVideo.value?.takeIf { it.id == videoId } ?: return
-        // Shown immediately from what the pairing already knows; the full text replaces it below.
-        _uiState.update { it.copy(infoVideo = counterpart) }
+        // Shown immediately from what the pairing already knows; the rest arrives below.
+        _uiState.update {
+            it.copy(infoVideo = counterpart, infoChannel = null, infoLikeState = null)
+        }
         loadComments(counterpart.id)
-        viewModelScope.launch {
-            val id = counterpart.id.contentId
-            val full = contentSourceRegistry.forId(id)
-                ?.let { source -> runCatching { source.video(id) }.getOrNull() }
-                ?: return@launch
-            if (_uiState.value.infoVideo?.id == counterpart.id) {
-                _uiState.update { it.copy(infoVideo = full) }
+
+        infoSideJob = viewModelScope.launch {
+            // The list endpoints truncate descriptions; the detail one does not.
+            launch {
+                val id = counterpart.id.contentId
+                val full = contentSourceRegistry.forId(id)
+                    ?.let { source -> runCatching { source.video(id) }.getOrNull() }
+                if (full != null && _uiState.value.infoVideo?.id == counterpart.id) {
+                    _uiState.update { it.copy(infoVideo = full) }
+                }
+            }
+            // The follower count lives on the channel, not on the video. YouTube answers null here
+            // — no count is better than the playing channel's count under a different name.
+            launch {
+                val channelId = counterpart.channelId.contentId
+                val channel = contentSourceRegistry.forId(channelId)
+                    ?.let { source -> runCatching { source.channel(channelId) }.getOrNull() }
+                if (channel != null && _uiState.value.infoVideo?.id == counterpart.id) {
+                    _uiState.update { it.copy(infoChannel = channel) }
+                }
+            }
+            // Subscribe and like must read the shown side, or the buttons would report the state of
+            // a channel and a video the user is not looking at.
+            launch {
+                subscriptionRepository.isSubscribed(counterpart.channelId).collect { subscribed ->
+                    _uiState.update { it.copy(infoSubscribed = subscribed) }
+                }
+            }
+            launch {
+                likedVideosRepository.getLikeState(counterpart.id).collect { state ->
+                    _uiState.update { it.copy(infoLikeState = state) }
+                }
             }
         }
+    }
+
+    /**
+     * Plays the other copy of this upload, from the player's settings menu.
+     *
+     * The choice is remembered for the video started this way, so the automatic redirect does not
+     * overrule it the next time the same video is tapped.
+     */
+    fun switchPlaybackSource() {
+        val target = _counterpartVideo.value ?: return
+        optedOutOfRedirect.add(target.id)
+        playVideo(target)
     }
     
     fun initializeViewHistory(context: Context) {
@@ -925,9 +980,10 @@ class VideoPlayerViewModel @Inject constructor(
             likeState = null,
             isUpcoming = false,
             upcomingReleaseTimeMs = null,
-            // Whoever redirected sets this again right after; every other path starts clean.
-            redirectedFrom = null,
-            infoVideo = null
+            // A new video is shown from its own side until the user says otherwise.
+            infoVideo = null,
+            infoChannel = null,
+            infoLikeState = null
         )
         GlobalPlayerState.setCurrentVideo(video)
         GlobalPlayerState.setExplicitBackgroundPlaybackActive(false)
@@ -973,26 +1029,11 @@ class VideoPlayerViewModel @Inject constructor(
             val counterpart = withTimeoutOrNull(REDIRECT_RESOLVE_TIMEOUT_MS) {
                 counterpartIn(peerTubeChannelId, video)
             }
-            if (counterpart == null) {
-                // No match, instance unreachable, or too slow — the tapped video plays as tapped.
-                playVideo(video)
-            } else {
-                playVideo(counterpart)
-                _uiState.update { it.copy(redirectedFrom = video) }
-            }
+            // No match, instance unreachable, or too slow — the tapped video plays as tapped. The
+            // redirect is not announced separately: the source switch under the title names the
+            // side that is playing, and the settings menu is where the other one is chosen.
+            playVideo(counterpart ?: video)
         }
-    }
-
-    /**
-     * Back to the version the user actually tapped, and stay there for this video.
-     *
-     * Without remembering the choice the next tap on the same video would redirect again, which
-     * would read as the button not working.
-     */
-    fun playRedirectOrigin() {
-        val origin = _uiState.value.redirectedFrom ?: return
-        optedOutOfRedirect.add(origin.id)
-        playVideo(origin)
     }
 
     /** The same upload as [video] among [channelId]'s uploads, or null. */
@@ -1058,8 +1099,9 @@ class VideoPlayerViewModel @Inject constructor(
             localFilePath = contentUri,
             localFileVideoId = video.id,
             offlineSponsorBlockSegments = null,
-            redirectedFrom = null,
-            infoVideo = null
+            infoVideo = null,
+            infoChannel = null,
+            infoLikeState = null
         )
         GlobalPlayerState.setCurrentVideo(video)
         GlobalPlayerState.setExplicitBackgroundPlaybackActive(false)
@@ -1248,8 +1290,9 @@ class VideoPlayerViewModel @Inject constructor(
                 queueTitle = title,
                 isUpcoming = false,
                 upcomingReleaseTimeMs = null,
-                redirectedFrom = null,
-                infoVideo = null
+                infoVideo = null,
+                infoChannel = null,
+                infoLikeState = null
             )
         }
         saveHistoryEntry(startVideo)
@@ -3055,7 +3098,6 @@ class VideoPlayerViewModel @Inject constructor(
             val isSubscribed = subscriptionRepository.isSubscribed(channelId).first()
             if (isSubscribed) {
                 subscriptionRepository.unsubscribe(channelId)
-                _uiState.value = _uiState.value.copy(isSubscribed = false)
             } else {
                 subscriptionRepository.subscribe(
                     ChannelSubscription(
@@ -3064,11 +3106,24 @@ class VideoPlayerViewModel @Inject constructor(
                         channelThumbnail = channelThumbnail
                     )
                 )
-                _uiState.value = _uiState.value.copy(isSubscribed = true)
             }
+            applySubscribedFor(channelId, !isSubscribed)
         }
     }
     
+    /**
+     * Same reasoning as [applyLikeStateFor]: the subscribe button acts on the channel that is on
+     * screen, which the source switch may have changed to the counterpart's.
+     */
+    private fun applySubscribedFor(channelId: String, subscribed: Boolean) {
+        _uiState.update {
+            when (channelId) {
+                it.infoVideo?.channelId -> it.copy(infoSubscribed = subscribed)
+                else -> it.copy(isSubscribed = subscribed)
+            }
+        }
+    }
+
     fun setNotificationEnabled(channelId: String, enabled: Boolean) {
         viewModelScope.launch {
             subscriptionRepository.updateNotificationState(channelId, enabled)
@@ -3107,7 +3162,7 @@ class VideoPlayerViewModel @Inject constructor(
                     channelName = channelName
                 )
             )
-            _uiState.value = _uiState.value.copy(likeState = "LIKED")
+            applyLikeStateFor(videoId, "LIKED")
             try {
                 val video = resolveRichVideo(videoId) ?: Video(
                     id = videoId,
@@ -3127,7 +3182,7 @@ class VideoPlayerViewModel @Inject constructor(
     fun dislikeVideo(videoId: String) {
         viewModelScope.launch {
             likedVideosRepository.dislikeVideo(videoId)
-            _uiState.value = _uiState.value.copy(likeState = "DISLIKED")
+            applyLikeStateFor(videoId, "DISLIKED")
             try {
                 val video = resolveRichVideo(videoId)
                 if (video != null) {
@@ -3142,7 +3197,25 @@ class VideoPlayerViewModel @Inject constructor(
     fun removeLikeState(videoId: String) {
         viewModelScope.launch {
             likedVideosRepository.removeLikeState(videoId)
-            _uiState.value = _uiState.value.copy(likeState = null)
+            applyLikeStateFor(videoId, null)
+        }
+    }
+
+    /**
+     * Writes the like state onto the side it belongs to.
+     *
+     * The like button acts on whichever copy the source switch is showing, so the optimistic update
+     * has to land on the matching field. Writing `likeState` unconditionally would have shown the
+     * counterpart's like on the playing video, and nothing would have corrected it: the playing
+     * video's own collector only fires when *its* row changes.
+     */
+    private fun applyLikeStateFor(videoId: String, state: String?) {
+        _uiState.update {
+            when (videoId) {
+                it.infoVideo?.id -> it.copy(infoLikeState = state)
+                it.cachedVideo?.id -> it.copy(likeState = state)
+                else -> it
+            }
         }
     }
     
@@ -3578,19 +3651,18 @@ data class VideoPlayerUiState(
     val liveChatMessages: List<io.github.aedev.flow.data.model.LiveChatMessage> = emptyList(),
     val isLiveChatLoading: Boolean = false,
     /**
-     * The YouTube video the user tapped when playback was redirected to its PeerTube copy.
-     *
-     * Non-null means "what is playing is not what was tapped" — the one state the notice row under
-     * the video needs, and the video to go back to when the user declines the redirect.
-     */
-    val redirectedFrom: Video? = null,
-    /**
-     * The counterpart whose description and comments the source tab is showing.
+     * The counterpart whose metadata the source switch is showing.
      *
      * Null — the normal case — means the playing video's own. Never changes what plays; sharing,
-     * copying a link and the watch history all stay on [cachedVideo].
+     * downloading and the watch history all stay on [cachedVideo].
      */
-    val infoVideo: Video? = null
+    val infoVideo: Video? = null,
+    /** The counterpart's channel, for its follower count. Null while loading or for YouTube. */
+    val infoChannel: Channel? = null,
+    /** Subscription state of the counterpart's channel, so the button matches what is on screen. */
+    val infoSubscribed: Boolean = false,
+    /** Like state of the counterpart, same reason. */
+    val infoLikeState: String? = null
 )
 
 data class SubtitleInfo(
