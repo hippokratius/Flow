@@ -97,6 +97,70 @@ class ChannelLinkPickerTest {
     }
 
     @Test
+    fun `already linked channels are not suggested again`() {
+        val links = listOf(ChannelLink(youtubeChannelId = "UCabc", peerTubeChannelId = peerTubeId))
+        val youtube = youtubeSubscriptionChannels(listOf(sub("UCabc"), sub("UCdef")))
+
+        assertThat(withoutLinkedChannels(youtube, links).map { it.id }).containsExactly("UCdef")
+    }
+
+    @Test
+    fun `the peertube half is dropped from its suggestions too`() {
+        val links = listOf(ChannelLink(youtubeChannelId = "UCabc", peerTubeChannelId = peerTubeId))
+        val other = ContentId.peerTube("framatube.org", "other").raw
+        val peerTube = peerTubeSubscriptionChannels(listOf(sub(peerTubeId), sub(other)))
+
+        assertThat(withoutLinkedChannels(peerTube, links).map { it.id }).containsExactly(other)
+    }
+
+    /**
+     * The two spellings of one channel. A subscription made on a mirroring instance stores the
+     * qualified form while a link made through search stores the origin form; without normalising,
+     * the linked channel would keep being suggested.
+     */
+    @Test
+    fun `a mirrored subscription counts as linked when its origin is linked`() {
+        val originForm = ContentId.peerTube("framatube.org", "news").raw
+        val mirrorForm = ContentId.peerTube("tilvids.com", "news@framatube.org").raw
+        val links = listOf(ChannelLink(youtubeChannelId = "UCabc", peerTubeChannelId = originForm))
+
+        val suggestions = withoutLinkedChannels(
+            peerTubeSubscriptionChannels(listOf(sub(mirrorForm))),
+            links,
+        )
+
+        assertThat(suggestions).isEmpty()
+    }
+
+    @Test
+    fun `nothing is dropped when there are no links`() {
+        val youtube = youtubeSubscriptionChannels(listOf(sub("UCabc"), sub("UCdef")))
+
+        assertThat(withoutLinkedChannels(youtube, emptyList())).hasSize(2)
+    }
+
+    @Test
+    fun `the two suggestion lists do not bleed into each other`() {
+        val subscriptions = listOf(sub("UCabc"), sub(peerTubeId), sub("local_7"))
+
+        assertThat(youtubeSubscriptionChannels(subscriptions).map { it.id }).containsExactly("UCabc")
+        assertThat(peerTubeSubscriptionChannels(subscriptions).map { it.id })
+            .containsExactly(peerTubeId)
+    }
+
+    /** Subscribed on two instances, one channel — the picker must not offer it twice. */
+    @Test
+    fun `the same peertube channel subscribed twice is suggested once`() {
+        val originForm = ContentId.peerTube("framatube.org", "news").raw
+        val mirrorForm = ContentId.peerTube("tilvids.com", "news@framatube.org").raw
+
+        val suggestions = peerTubeSubscriptionChannels(listOf(sub(originForm), sub(mirrorForm)))
+
+        assertThat(suggestions).hasSize(1)
+        assertThat(suggestions.single().id).isEqualTo(originForm)
+    }
+
+    @Test
     fun `blank subscription names are not offered as display names`() {
         val names = subscriptionNamesById(listOf(sub("UCabc", name = "")))
 

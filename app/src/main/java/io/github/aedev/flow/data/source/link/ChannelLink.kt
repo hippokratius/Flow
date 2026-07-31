@@ -41,6 +41,32 @@ data class ChannelLink(
 }
 
 /**
+ * The same PeerTube channel written the same way, whichever route produced the id.
+ *
+ * A channel an instance only mirrors is addressed there as `name@originhost`, so a subscription made
+ * from that instance's page stores `peertube_tilvids.com_news@framatube.org`, while channel search
+ * — normalised onto the origin since the search index was added — yields
+ * `peertube_framatube.org_news`. Two spellings, one channel.
+ *
+ * Left alone unless the native part actually carries an origin host, so YouTube ids, local ids and
+ * malformed input pass through untouched. No network: the origin is already in the id.
+ */
+fun normalizePeerTubeChannelId(raw: String): String {
+    val id = raw.trim().contentId
+    if (id.kind != SourceKind.PEERTUBE) return raw.trim()
+
+    val nativeId = id.nativeId
+    val originHost = nativeId.substringAfter('@', missingDelimiterValue = "")
+        .trim()
+        .lowercase()
+        .takeIf { it.isNotBlank() && it.contains('.') }
+        ?: return raw.trim()
+
+    val bareName = nativeId.substringBefore('@').takeIf { it.isNotBlank() } ?: return raw.trim()
+    return ContentId.peerTube(originHost, bareName).raw
+}
+
+/**
  * Pure operations on the link list, so ordering and de-duplication can be tested without a DataStore.
  *
  * Mirrors [io.github.aedev.flow.data.source.peertube.PeerTubeInstances], which does the same for the
@@ -54,10 +80,17 @@ object ChannelLinks {
         return links.firstOrNull { it.youtubeChannelId.equals(needle, ignoreCase = true) }
     }
 
+    /**
+     * Both sides are normalised before comparing, which is what makes the hint row appear under a
+     * *mirrored* video: the video carries `name@originhost`, the stored link usually the origin form.
+     * Comparing the raw strings would miss exactly the case the feature exists for.
+     */
     fun forPeerTube(links: List<ChannelLink>, peerTubeChannelId: String): ChannelLink? {
-        val needle = peerTubeChannelId.trim()
+        val needle = normalizePeerTubeChannelId(peerTubeChannelId)
         if (needle.isEmpty()) return null
-        return links.firstOrNull { it.peerTubeChannelId.equals(needle, ignoreCase = true) }
+        return links.firstOrNull {
+            normalizePeerTubeChannelId(it.peerTubeChannelId).equals(needle, ignoreCase = true)
+        }
     }
 
     /** The counterpart of [channelId] on the other platform, whichever side was passed in. */
@@ -77,9 +110,10 @@ object ChannelLinks {
      */
     fun add(links: List<ChannelLink>, link: ChannelLink): List<ChannelLink> {
         if (!link.isValid) return links
+        val peerTubeKey = normalizePeerTubeChannelId(link.peerTubeChannelId)
         val withoutConflicts = links.filterNot {
             it.youtubeChannelId.equals(link.youtubeChannelId, ignoreCase = true) ||
-                it.peerTubeChannelId.equals(link.peerTubeChannelId, ignoreCase = true)
+                normalizePeerTubeChannelId(it.peerTubeChannelId).equals(peerTubeKey, ignoreCase = true)
         }
         return listOf(link) + withoutConflicts
     }
@@ -88,9 +122,10 @@ object ChannelLinks {
     fun remove(links: List<ChannelLink>, channelId: String): List<ChannelLink> {
         val needle = channelId.trim()
         if (needle.isEmpty()) return links
+        val peerTubeNeedle = normalizePeerTubeChannelId(needle)
         return links.filterNot {
             it.youtubeChannelId.equals(needle, ignoreCase = true) ||
-                it.peerTubeChannelId.equals(needle, ignoreCase = true)
+                normalizePeerTubeChannelId(it.peerTubeChannelId).equals(peerTubeNeedle, ignoreCase = true)
         }
     }
 }

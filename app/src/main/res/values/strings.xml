@@ -2495,6 +2495,7 @@
     <string name="channel_links_search">Search</string>
     <string name="channel_links_link">Link</string>
     <string name="channel_links_link_pasted">Link %1$s</string>
+    <string name="channel_links_peertube_known">Channels you follow</string>
     <string name="channel_links_no_results">Nothing found. Some instances only search their own content — pasting the channel address always works.</string>
     <string name="channel_links_empty">No links yet.</string>
     <string name="channel_links_pair">PeerTube: %1$s on %2$s</string>

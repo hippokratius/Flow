@@ -64,12 +64,14 @@ import io.github.aedev.flow.data.source.ContentSourceRegistry
 import io.github.aedev.flow.data.source.contentId
 import io.github.aedev.flow.data.source.link.ChannelLink
 import io.github.aedev.flow.data.source.link.ChannelLinkStore
+import io.github.aedev.flow.data.source.link.normalizePeerTubeChannelId
 import io.github.aedev.flow.data.source.peertube.PeerTubeChannelReference
 import io.github.aedev.flow.ui.components.ChannelCardHorizontal
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -93,6 +95,7 @@ fun ChannelLinksScreen(
     val mirrorSubscriptions by viewModel.mirrorSubscriptions.collectAsState()
     val search by viewModel.searchState.collectAsState()
     val subscribedChannels by viewModel.subscribedChannels.collectAsState()
+    val suggestedPeerTube by viewModel.suggestedPeerTubeChannels.collectAsState()
     val subscriptionNames by viewModel.subscriptionNames.collectAsState()
 
     // A picked channel, never a typed id. The id has to match what the channel page reports, and only
@@ -318,6 +321,29 @@ fun ChannelLinksScreen(
                                 onLink = { linkTo(candidate.id, candidate.name) }
                             )
                         }
+
+                        // Channels the user already follows, offered before they search for anything.
+                        // A search replaces them with its own hits.
+                        if (!search.hasSearched && !search.isSearching && suggestedPeerTube.isNotEmpty()) {
+                            val suggestions = remember(suggestedPeerTube, peerTubeQuery) {
+                                filterChannelsByName(suggestedPeerTube, peerTubeQuery)
+                                    .take(MAX_PICKER_ROWS)
+                            }
+                            if (suggestions.isNotEmpty()) {
+                                Text(
+                                    text = stringResource(R.string.channel_links_peertube_known),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                suggestions.forEach { candidate ->
+                                    SearchResultRow(
+                                        channel = candidate,
+                                        canLink = selectedYoutube != null,
+                                        onLink = { linkTo(candidate.id, candidate.name) }
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -456,9 +482,16 @@ class ChannelLinksViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     /** The YouTube half is picked from here — see [youtubeSubscriptionChannels] for why filtered. */
-    val subscribedChannels: StateFlow<List<Channel>> = allSubscriptions
-        .map(::youtubeSubscriptionChannels)
-        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    val subscribedChannels: StateFlow<List<Channel>> =
+        combine(allSubscriptions, links) { subscriptions, existing ->
+            withoutLinkedChannels(youtubeSubscriptionChannels(subscriptions), existing)
+        }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    /** The counterpart half, suggested from what the app already knows rather than only from search. */
+    val suggestedPeerTubeChannels: StateFlow<List<Channel>> =
+        combine(allSubscriptions, links) { subscriptions, existing ->
+            withoutLinkedChannels(peerTubeSubscriptionChannels(subscriptions), existing)
+        }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     /** Names for links stored before the picker existed, so the list never shows a bare id. */
     val subscriptionNames: StateFlow<Map<String, String>> = allSubscriptions
@@ -500,7 +533,8 @@ class ChannelLinksViewModel @Inject constructor(
         val candidate = ChannelLink(
             youtubeChannelId = youtubeChannelId.trim(),
             youtubeChannelName = youtubeChannelName.trim(),
-            peerTubeChannelId = peerTubeChannelId.trim(),
+            // Normalised so that linking from a subscription and from search yield one link.
+            peerTubeChannelId = normalizePeerTubeChannelId(peerTubeChannelId),
             peerTubeChannelName = peerTubeChannelName.trim(),
             createdAt = System.currentTimeMillis(),
         )

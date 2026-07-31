@@ -102,6 +102,58 @@ class ChannelLinksTest {
         assertThat(ChannelLinks.add(emptyList(), link("UCabc", ""))).isEmpty()
     }
 
+    /**
+     * The same channel in two spellings. A subscription made on a mirroring instance stores
+     * `name@originhost`; a link made through search stores the origin form. A lookup with either must
+     * find the link — otherwise the hint row stays away from exactly the mirrored videos it exists for.
+     */
+    @Test
+    fun `either spelling of a peertube id finds the link`() {
+        val originForm = ContentId.peerTube("framatube.org", "news").raw
+        val mirrorForm = ContentId.peerTube("tilvids.com", "news@framatube.org").raw
+        val links = listOf(link("UCabc", originForm))
+
+        assertThat(ChannelLinks.forPeerTube(links, originForm)).isNotNull()
+        assertThat(ChannelLinks.forPeerTube(links, mirrorForm)).isNotNull()
+        assertThat(ChannelLinks.counterpart(links, mirrorForm)).isEqualTo("UCabc")
+    }
+
+    @Test
+    fun `a link stored in the mirror form is found by the origin form`() {
+        val originForm = ContentId.peerTube("framatube.org", "news").raw
+        val mirrorForm = ContentId.peerTube("tilvids.com", "news@framatube.org").raw
+        val links = listOf(link("UCabc", mirrorForm))
+
+        assertThat(ChannelLinks.forPeerTube(links, originForm)).isNotNull()
+    }
+
+    @Test
+    fun `linking the same channel in both spellings yields one link`() {
+        val originForm = ContentId.peerTube("framatube.org", "news").raw
+        val mirrorForm = ContentId.peerTube("tilvids.com", "news@framatube.org").raw
+
+        val links = ChannelLinks.add(
+            ChannelLinks.add(emptyList(), link("UCabc", originForm)),
+            link("UCdef", mirrorForm),
+        )
+
+        assertThat(links).hasSize(1)
+    }
+
+    @Test
+    fun `normalisation leaves everything else alone`() {
+        val plain = ContentId.peerTube("framatube.org", "news").raw
+
+        assertThat(normalizePeerTubeChannelId(plain)).isEqualTo(plain)
+        assertThat(normalizePeerTubeChannelId("UCabc")).isEqualTo("UCabc")
+        assertThat(normalizePeerTubeChannelId("local_7")).isEqualTo("local_7")
+        assertThat(normalizePeerTubeChannelId("")).isEmpty()
+        assertThat(normalizePeerTubeChannelId("peertube_")).isEqualTo("peertube_")
+        // An "@" that is not a host must not be mistaken for one.
+        val oddName = ContentId.peerTube("tilvids.com", "news@nohost").raw
+        assertThat(normalizePeerTubeChannelId(oddName)).isEqualTo(oddName)
+    }
+
     @Test
     fun `the instance host is readable from the link`() {
         val link = link("UCabc", peerTubeNews)

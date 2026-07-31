@@ -14,6 +14,7 @@ import io.github.aedev.flow.data.model.Channel
 import io.github.aedev.flow.data.source.SourceKind
 import io.github.aedev.flow.data.source.contentId
 import io.github.aedev.flow.data.source.link.ChannelLink
+import io.github.aedev.flow.data.source.link.normalizePeerTubeChannelId
 import io.github.aedev.flow.utils.ThumbnailUrlResolver
 
 /*
@@ -45,6 +46,53 @@ fun youtubeSubscriptionChannels(subscriptions: List<ChannelSubscription>): List<
                 isMusic = subscription.isMusic,
             )
         }
+
+/**
+ * The subscribed PeerTube channels, offered as the counterpart half.
+ *
+ * The app already knows these; making the user search for a channel they are subscribed to was the
+ * same asymmetry the YouTube half just lost. Ids are normalised so that picking a channel here and
+ * finding the same channel through search produce one link, not two — see
+ * [io.github.aedev.flow.data.source.link.normalizePeerTubeChannelId].
+ */
+fun peerTubeSubscriptionChannels(subscriptions: List<ChannelSubscription>): List<Channel> =
+    subscriptions
+        .filter { it.channelId.contentId.kind == SourceKind.PEERTUBE }
+        .map { subscription ->
+            val id = normalizePeerTubeChannelId(subscription.channelId)
+            Channel(
+                id = id,
+                name = subscription.channelName.ifBlank { id.contentId.nativeId },
+                thumbnailUrl = subscription.channelThumbnail,
+                subscriberCount = 0L,
+                isSubscribed = true,
+                source = SourceKind.PEERTUBE,
+                instanceHost = id.contentId.instanceHost,
+            )
+        }
+        .distinctBy { it.id }
+
+/**
+ * Drops the channels that already have a counterpart.
+ *
+ * A suggestion list is a list of things still to do; leaving finished entries in it means searching
+ * past them every time. Changing an existing pairing still works — the links are listed right below
+ * and removing one puts both halves back in the suggestions.
+ */
+fun withoutLinkedChannels(channels: List<Channel>, links: List<ChannelLink>): List<Channel> {
+    if (links.isEmpty()) return channels
+    val linkedYoutube = links.mapTo(mutableSetOf()) { it.youtubeChannelId.lowercase() }
+    val linkedPeerTube = links.mapTo(mutableSetOf()) {
+        normalizePeerTubeChannelId(it.peerTubeChannelId).lowercase()
+    }
+    return channels.filterNot { channel ->
+        when (channel.id.contentId.kind) {
+            SourceKind.PEERTUBE -> normalizePeerTubeChannelId(channel.id).lowercase() in linkedPeerTube
+            SourceKind.YOUTUBE -> channel.id.lowercase() in linkedYoutube
+            SourceKind.LOCAL -> false
+        }
+    }
+}
 
 /** Substring match on the name, which is what someone typing a creator's name expects. */
 fun filterChannelsByName(channels: List<Channel>, query: String): List<Channel> {
