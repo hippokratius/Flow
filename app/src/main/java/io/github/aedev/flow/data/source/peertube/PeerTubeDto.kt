@@ -27,8 +27,10 @@ data class PTVideoListDto(
 
 @Serializable
 data class PTVideoDto(
-    val uuid: String,
-    val name: String,
+    // Defaulted so a response missing one of them degrades rather than failing to parse; the detail
+    // DTO this replaced was tolerant that way and the playback path relied on it.
+    val uuid: String = "",
+    val name: String = "",
     val description: String? = null,
     val thumbnailPath: String? = null,
     val previewPath: String? = null,
@@ -132,12 +134,12 @@ data class PTChannelListDto(
     val data: List<PTChannelDetailDto> = emptyList(),
 )
 
-/** Single-video detail response, used to resolve stream URLs lazily. */
-@Serializable
-data class PTVideoDetailDto(
-    val uuid: String = "",
-    val name: String = "",
-    val duration: Long = 0,
-    val streamingPlaylists: List<PTStreamingPlaylistDto> = emptyList(),
-    val files: List<PTFileDto> = emptyList(),
-)
+/*
+ * There is deliberately no separate detail DTO.
+ *
+ * There was one, with five fields, written when the detail endpoint served only playback. Once the
+ * source switch started reading metadata through it, every federated video arrived with no channel,
+ * no view count and no publication date — the fields simply were not in the class, so they silently
+ * took their defaults. The detail response is a superset of the list form, `ignoreUnknownKeys`
+ * covers the difference, and one shape means one place to keep complete.
+ */

@@ -114,7 +114,7 @@ class PeerTubeApi @Inject constructor(
         }
     }
 
-    suspend fun videoDetail(instanceUrl: String, uuid: String): PTVideoDetailDto =
+    suspend fun videoDetail(instanceUrl: String, uuid: String): PTVideoDto =
         get("$instanceUrl/api/v1/videos/$uuid")
 
     /**

@@ -228,22 +228,19 @@ fun VideoInfoSection(
                         overflow = TextOverflow.Ellipsis
                     )
                     
-                    val subText = subscriberCount?.let { formatSubscriberCount(it) } ?: ""
-                    if (subText.isNotEmpty()) {
-                        Text(
-                            text = subText,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.extendedColors.textSecondary,
-                            maxLines = 1
-                        )
-                    }
-
+                    // Follower count and instance on one line, so a federated channel takes the
+                    // same two rows as a YouTube one instead of three.
+                    //
                     // The player shows no thumbnail, so the card badge cannot carry the origin
                     // here. Naming the instance is also more useful than a generic mark: which
                     // server a federated video came from is the part that actually varies.
-                    video.instanceHost?.takeIf { it.isNotBlank() }?.let { host ->
+                    val subText = subscriberCount?.let { formatSubscriberCount(it) } ?: ""
+                    val host = video.instanceHost?.takeIf { it.isNotBlank() }
+                    val secondLine = listOfNotNull(subText.takeIf { it.isNotEmpty() }, host)
+                        .joinToString(" • ")
+                    if (secondLine.isNotEmpty()) {
                         Text(
-                            text = host,
+                            text = secondLine,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.extendedColors.textSecondary,
                             maxLines = 1,

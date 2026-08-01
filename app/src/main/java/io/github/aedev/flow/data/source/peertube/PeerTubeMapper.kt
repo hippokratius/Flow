@@ -44,7 +44,9 @@ fun PTVideoDto.toVideo(instance: PeerTubeInstance): Video {
     return Video(
         id = ContentId.peerTube(host, uuid).raw,
         title = name,
-        channelName = channel?.displayName.orEmpty(),
+        // Same fallback as [toChannel]: some instances leave displayName empty and only set the
+        // handle, and a channel row with no name reads as a loading failure.
+        channelName = channel?.displayName?.takeIf { it.isNotBlank() } ?: channel?.name.orEmpty(),
         // Never blank. FlowNeuroEngine.rank filters candidates against brain.blockedChannels, so a
         // blank channel id that a user had ever blocked would silently swallow every PeerTube video
         // at once. Falling back to the host keeps the value meaningful and unique per instance.

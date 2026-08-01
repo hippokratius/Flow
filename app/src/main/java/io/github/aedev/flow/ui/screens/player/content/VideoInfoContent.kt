@@ -260,9 +260,17 @@ fun VideoInfoContent(
     val shownVideo = uiState.infoVideo
     val shown = shownVideo ?: video
     val shownChannelId = if (shownVideo != null) shownVideo.channelId else channelIdOf(uiState, video)
-    val shownChannelName = if (shownVideo != null) shownVideo.channelName else resolvedChannelName
+    // The channel endpoint is the more reliable of the two — a video's embedded channel object is
+    // often trimmed down to a handle — so it wins where it has an answer.
+    val shownChannelName = if (shownVideo != null) {
+        uiState.infoChannel?.name?.takeIf { it.isNotBlank() }
+            ?: shownVideo.channelName.ifBlank { shownVideo.channelId.contentId.nativeId }
+    } else {
+        resolvedChannelName
+    }
     val shownChannelThumb = if (shownVideo != null) {
-        shownVideo.channelThumbnailUrl
+        uiState.infoChannel?.thumbnailUrl?.takeIf { it.isNotBlank() }
+            ?: shownVideo.channelThumbnailUrl
     } else {
         uiState.channelAvatarUrl?.takeIf { it.isNotEmpty() } ?: video.channelThumbnailUrl
     }
@@ -400,13 +408,8 @@ fun VideoInfoContent(
         )
     }
 
-    // "This creator also publishes on PeerTube", when the user has said so. Renders nothing
-    // otherwise, so it costs an unlinked channel nothing but a lookup in a cached list. Shown for
-    // the channel on screen, which the switch above may have changed.
-    io.github.aedev.flow.ui.components.LinkedChannelRow(
-        channelId = shownChannelId,
-        onOpenLinkedChannel = onChannelClick
-    )
+    // No "Also on PeerTube" row here: the source switch under the title says the same thing and
+    // does more. The row still earns its place on the channel pages, where nothing else does.
 
     if (uiState.isLiveChatAvailable) {
         io.github.aedev.flow.ui.components.LiveChatPreview(

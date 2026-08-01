@@ -66,13 +66,9 @@ class PeerTubeContentSource @Inject constructor(
         val instance = instanceFor(host)
         val detail = runCatching { api.videoDetail(instance.url, id.nativeId) }.getOrNull()
             ?: return null
-        return PTVideoDto(
-            uuid = detail.uuid.ifBlank { id.nativeId },
-            name = detail.name,
-            duration = detail.duration,
-            streamingPlaylists = detail.streamingPlaylists,
-            files = detail.files,
-        ).toVideo(instance)
+        // The whole response, not a hand-picked subset: this is where the player gets a federated
+        // video's title, channel, artwork and view count from.
+        return detail.copy(uuid = detail.uuid.ifBlank { id.nativeId }).toVideo(instance)
     }
 
     override suspend fun channel(id: ContentId): Channel? {

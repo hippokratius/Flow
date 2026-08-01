@@ -2895,13 +2895,17 @@ class VideoPlayerViewModel @Inject constructor(
     private suspend fun enrichExternalSourceVideo(contentId: io.github.aedev.flow.data.source.ContentId) {
         val videoId = contentId.raw
         val cached = _uiState.value.cachedVideo?.takeIf { it.id == videoId } ?: return
-        if (cached.title.isNotBlank() && cached.duration > 0 && cached.channelId.isNotBlank()) return
+        val alreadyComplete =
+            cached.title.isNotBlank() && cached.duration > 0 && cached.channelId.isNotBlank()
 
-        val fetched = contentSourceRegistry.forId(contentId)
-            ?.let { source -> runCatching { source.video(contentId) }.getOrNull() }
-            ?: return
+        val fetched = if (alreadyComplete) {
+            null
+        } else {
+            contentSourceRegistry.forId(contentId)
+                ?.let { source -> runCatching { source.video(contentId) }.getOrNull() }
+        }
 
-        withContext(Dispatchers.Main) {
+        if (fetched != null) withContext(Dispatchers.Main) {
             val current = _uiState.value.cachedVideo?.takeIf { it.id == videoId } ?: return@withContext
             val enriched = current.copy(
                 title = current.title.ifBlank { fetched.title },
@@ -2921,6 +2925,42 @@ class VideoPlayerViewModel @Inject constructor(
             GlobalPlayerState.setCurrentVideo(enriched)
             _uiState.update { it.copy(cachedVideo = enriched) }
             saveHistoryEntry(enriched)
+        }
+
+        enrichExternalSourceChannel(_uiState.value.cachedVideo?.takeIf { it.id == videoId })
+    }
+
+    /**
+     * The follower count and avatar of a federated video's channel.
+     *
+     * Both live on the channel, not on the video, and the existing channel-metadata path is a
+     * NewPipe lookup that finds nothing for a `peertube_…` id. Without this the panel showed a
+     * follower count for the *counterpart* — which does load its channel — and none for the side
+     * that was actually playing.
+     */
+    private suspend fun enrichExternalSourceChannel(video: Video?) {
+        val channelId = video?.channelId?.takeIf { it.isNotBlank() } ?: return
+        if (_uiState.value.channelSubscriberCount != null &&
+            !_uiState.value.channelAvatarUrl.isNullOrBlank()
+        ) {
+            return
+        }
+
+        val id = channelId.contentId
+        val channel = contentSourceRegistry.forId(id)
+            ?.let { source -> runCatching { source.channel(id) }.getOrNull() }
+            ?: return
+
+        withContext(Dispatchers.Main) {
+            if (_uiState.value.cachedVideo?.id != video.id) return@withContext
+            _uiState.update { state ->
+                state.copy(
+                    channelSubscriberCount = state.channelSubscriberCount
+                        ?: channel.subscriberCount.takeIf { it > 0L },
+                    channelAvatarUrl = state.channelAvatarUrl?.takeIf { it.isNotBlank() }
+                        ?: channel.thumbnailUrl.takeIf { it.isNotBlank() },
+                )
+            }
         }
     }
 

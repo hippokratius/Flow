@@ -155,6 +155,53 @@ class PeerTubeChannelMappingTest {
         assertThat(ContentId(prefixed.channelId).nativeId).isEqualTo("news@framatube.org")
     }
 
+    /**
+     * The detail endpoint's answer maps like any other video.
+     *
+     * There used to be a second, five-field DTO for it, written when that endpoint served only
+     * playback. Once the source switch started reading metadata through it, every federated video
+     * arrived with no channel, no view count and no date — they were simply not in the class.
+     */
+    @Test
+    fun `a detail response carries the whole video`() {
+        val detail = PTVideoDto(
+            uuid = "9b1deb4d-3b7d-4bad",
+            name = "Claude Opus 5 gefällt mir besser als Fable",
+            description = "Ein Vergleich",
+            previewPath = "/static/previews/x.jpg",
+            duration = 1326,
+            publishedAt = "2026-07-27T10:00:00.000Z",
+            views = 77,
+            channel = PTChannelDto(
+                displayName = "The Morpheus Tutorials",
+                name = "themorpheus",
+                avatars = listOf(PTAvatarDto(path = "/a/m.png", width = 120)),
+            ),
+        ).toVideo(instance)
+
+        assertThat(detail.title).isEqualTo("Claude Opus 5 gefällt mir besser als Fable")
+        assertThat(detail.channelName).isEqualTo("The Morpheus Tutorials")
+        assertThat(detail.channelThumbnailUrl).isEqualTo("https://tilvids.com/a/m.png")
+        assertThat(detail.viewCount).isEqualTo(77L)
+        assertThat(detail.duration).isEqualTo(1326)
+        assertThat(detail.description).isEqualTo("Ein Vergleich")
+        assertThat(detail.thumbnailUrl).isEqualTo("https://tilvids.com/static/previews/x.jpg")
+        assertThat(detail.timestamp).isGreaterThan(0L)
+    }
+
+    /** Some instances leave displayName empty and set only the handle. */
+    @Test
+    fun `a channel without a display name still has a name`() {
+        val named = video(PTChannelDto(displayName = "", name = "themorpheus")).toVideo(instance)
+
+        assertThat(named.channelName).isEqualTo("themorpheus")
+    }
+
+    @Test
+    fun `a video without channel data has no name rather than a crash`() {
+        assertThat(video(null).toVideo(instance).channelName).isEmpty()
+    }
+
     private fun video(channel: PTChannelDto?) = PTVideoDto(
         uuid = "9b1deb4d-3b7d-4bad",
         name = "A video",
