@@ -41,6 +41,18 @@ import io.github.aedev.flow.data.model.Video
 const val MIN_DURATION_TOLERANCE_SECONDS = 90
 const val DURATION_TOLERANCE_FRACTION = 0.2
 
+/*
+ * The second, stricter set: what counts as the same upload when the titles say nothing.
+ *
+ * Creators who translate their titles for the other platform — "I prefer Claude Opus 5 over Fable"
+ * against "Claude Opus 5 gefällt mir besser als Fable" — leave the runtime as the only evidence, so
+ * it has to be near-identical rather than merely plausible, and it only counts when no second
+ * candidate could claim the same slot. See [findCounterpartByRuntime].
+ */
+const val RUNTIME_ONLY_TOLERANCE_SECONDS = 2
+const val RUNTIME_ONLY_TOLERANCE_FRACTION = 0.01
+const val RUNTIME_ONLY_WINDOW_DAYS = 30
+
 /**
  * A title reduced to what two platforms can agree on.
  *
@@ -108,6 +120,45 @@ fun findCounterpart(video: Video, candidates: List<Video>): Video? =
                 { kotlin.math.abs(it.timestamp - video.timestamp) },
             )
         )
+        ?: findCounterpartByRuntime(video, candidates)
+
+/**
+ * The counterpart of a video whose title was **translated** for the other platform.
+ *
+ * The Morpheus Tutorials publish "I prefer Claude Opus 5 over Fable" on YouTube and "Claude Opus 5
+ * gefällt mir besser als Fable" on their own instance — same 22:06, same day, nothing in common as
+ * text. No amount of title normalising reaches that, so when the title finds nothing, the runtime
+ * has to answer on its own.
+ *
+ * Which is only safe under three conditions at once, because there is no second signal left to
+ * check:
+ * - both runtimes known and within [RUNTIME_ONLY_TOLERANCE_SECONDS] or one percent — not the
+ *   generous window [isSameUpload] allows, but "the same file, re-encoded",
+ * - published within [RUNTIME_ONLY_WINDOW_DAYS] of each other,
+ * - and **exactly one** candidate qualifies.
+ *
+ * That last one is what makes this defensible. The moment a channel has two videos of the same
+ * length in the same month, this refuses to answer rather than guess — the failure mode is a missing
+ * switch, never a wrong video.
+ */
+private fun findCounterpartByRuntime(video: Video, candidates: List<Video>): Video? {
+    if (video.duration <= 0) return null
+
+    val window = RUNTIME_ONLY_WINDOW_DAYS * 24L * 60L * 60L * 1000L
+    val tolerance = maxOf(
+        RUNTIME_ONLY_TOLERANCE_SECONDS,
+        (video.duration * RUNTIME_ONLY_TOLERANCE_FRACTION).toInt(),
+    )
+
+    val plausible = candidates.filter { candidate ->
+        candidate.duration > 0 &&
+            kotlin.math.abs(candidate.duration - video.duration) <= tolerance &&
+            // A timestamp of 0 means "unknown", and unknown is not evidence of closeness.
+            candidate.timestamp > 0L && video.timestamp > 0L &&
+            kotlin.math.abs(candidate.timestamp - video.timestamp) <= window
+    }
+    return plausible.singleOrNull()
+}
 
 /**
  * One chronological list for a linked pair of channels, newest first.

@@ -14,6 +14,11 @@ import org.junit.Test
  */
 class VideoPairingTest {
 
+    private companion object {
+        const val DAY = 86_400_000L
+        const val NOW = 1_700_000_000_000L
+    }
+
     private fun video(
         id: String,
         title: String,
@@ -150,6 +155,84 @@ class VideoPairingTest {
         )
 
         assertThat(findCounterpart(video("y", "The News", 900), candidates)?.id).isEqualTo("p_near")
+    }
+
+    /**
+     * The Morpheus Tutorials translate their titles: "I prefer Claude Opus 5 over Fable" on YouTube,
+     * "Claude Opus 5 gefällt mir besser als Fable" on their own instance. Same 22:06, same day, and
+     * nothing in common as text — the runtime is the only evidence there is.
+     */
+    @Test
+    fun `a translated title pairs on the runtime alone`() {
+        val candidates = listOf(
+            video("p1", "Claude Opus 5 gefällt mir besser als Fable", 1326, NOW - 5 * DAY, SourceKind.PEERTUBE),
+            video("p2", "Das ist der Deepseek 2.0 Moment", 2522, NOW - 7 * DAY, SourceKind.PEERTUBE),
+        )
+
+        assertThat(
+            findCounterpart(video("y", "I prefer Claude Opus 5 over Fable", 1326, NOW - 5 * DAY), candidates)?.id
+        ).isEqualTo("p1")
+    }
+
+    /**
+     * The guard that makes the runtime-only stage defensible. With no title to tell them apart, two
+     * videos of the same length are indistinguishable — so nothing is returned rather than a guess.
+     */
+    @Test
+    fun `two candidates of the same length are not guessed between`() {
+        val candidates = listOf(
+            video("p_a", "Folge A", 1326, NOW - 3 * DAY, SourceKind.PEERTUBE),
+            video("p_b", "Folge B", 1326, NOW - 4 * DAY, SourceKind.PEERTUBE),
+        )
+
+        assertThat(findCounterpart(video("y", "Something else", 1326, NOW), candidates)).isNull()
+    }
+
+    @Test
+    fun `the runtime-only stage is bounded in time and length`() {
+        val yt = video("y", "Something else", 1326, NOW)
+
+        assertThat(
+            findCounterpart(yt, listOf(video("p", "Anderer Titel", 1326, NOW - 365 * DAY, SourceKind.PEERTUBE)))
+        ).isNull()
+        assertThat(
+            findCounterpart(yt, listOf(video("p", "Anderer Titel", 1400, NOW, SourceKind.PEERTUBE)))
+        ).isNull()
+        // One percent of an hour is still half a minute.
+        assertThat(
+            findCounterpart(
+                video("y", "Something else", 3600, NOW),
+                listOf(video("p", "Anderer Titel", 3630, NOW, SourceKind.PEERTUBE)),
+            )?.id
+        ).isEqualTo("p")
+    }
+
+    /** An unknown runtime or timestamp is not evidence of anything. */
+    @Test
+    fun `the runtime-only stage needs both facts`() {
+        assertThat(
+            findCounterpart(
+                video("y", "Something else", 1326, 0L),
+                listOf(video("p", "Anderer Titel", 1326, 0L, SourceKind.PEERTUBE)),
+            )
+        ).isNull()
+        assertThat(
+            findCounterpart(
+                video("y", "Something else", 0, NOW),
+                listOf(video("p", "Anderer Titel", 0, NOW, SourceKind.PEERTUBE)),
+            )
+        ).isNull()
+    }
+
+    @Test
+    fun `a title match beats a runtime match`() {
+        val candidates = listOf(
+            video("p_runtime", "Ganz anderer Titel", 1326, NOW, SourceKind.PEERTUBE),
+            video("p_title", "The Show", 1200, NOW, SourceKind.PEERTUBE),
+        )
+
+        assertThat(findCounterpart(video("y", "The Show", 1326, NOW), candidates)?.id)
+            .isEqualTo("p_title")
     }
 
     /** With nothing to tell the runtimes apart, the nearest publication date decides. */
