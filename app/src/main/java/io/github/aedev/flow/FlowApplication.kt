@@ -85,10 +85,13 @@ class FlowApplication : Application(), ImageLoaderFactory {
         
         try {
             val country = ContentCountry("US")
-            val localization = Localization("en", "US")
+            // The device language rather than a hardcoded "en": a channel that publishes
+            // multi-language metadata should reach the user in their own. The stored preference is
+            // applied a moment later, once DataStore has answered — see below.
+            val localization = io.github.aedev.flow.utils.extractorLocalization("system")
             NewPipe.init(NewPipeDownloader.getInstance(this), localization, country)
             YoutubeStreamExtractor.setPoTokenProvider(NewPipePoTokenProvider)
-            Log.d(TAG, "NewPipe initialized successfully with en-US settings")
+            Log.d(TAG, "NewPipe initialized with language ${localization.languageCode}")
         } catch (e: Exception) {
             // Log error but don't crash the app
             Log.e(TAG, "Failed to initialize NewPipe", e)
@@ -184,6 +187,15 @@ class FlowApplication : Application(), ImageLoaderFactory {
                 YouTubeLocale(gl = glCode, hl = hlCode)
             }.collectLatest { newLocale ->
                 YouTube.locale = newLocale
+                // The extractor follows the same setting. Without this it kept answering in English
+                // while InnerTube answered in the user's language — one app, two languages.
+                runCatching {
+                    NewPipe.init(
+                        NewPipe.getDownloader(),
+                        Localization(newLocale.hl),
+                        ContentCountry(newLocale.gl),
+                    )
+                }.onFailure { Log.w(TAG, "Could not apply locale to the extractor", it) }
                 Log.d(TAG, "Dynamic YouTube Locale updated: gl=${newLocale.gl}, hl=${newLocale.hl}")
             }
         }

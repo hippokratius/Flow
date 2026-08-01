@@ -31,6 +31,7 @@ import io.github.aedev.flow.innertube.models.response.WatchMetadataResponse
 import io.github.aedev.flow.utils.avatarImageIdentityKey
 import io.github.aedev.flow.utils.distinctBestImageUrls
 import io.github.aedev.flow.utils.ThumbnailUrlResolver
+import io.github.aedev.flow.utils.isLiveViewerText
 import io.github.aedev.flow.utils.parseToTimestamp
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.withPermit
@@ -215,7 +216,7 @@ class YouTubeRepository @Inject constructor(
             val effectiveRegion = region.ifBlank { playerPreferences.trendingRegion.first() }
             // Update localization based on region
             val country = ContentCountry(effectiveRegion)
-            val localization = Localization.fromLocale(java.util.Locale.ENGLISH)
+            val localization = currentExtractorLocalization()
             NewPipe.init(NewPipe.getDownloader(), localization, country)
 
             val kioskList = service.kioskList
@@ -511,7 +512,7 @@ class YouTubeRepository @Inject constructor(
                 // Re-init NewPipe to potentially clear internal state
                 try {
                      val country = ContentCountry("US")
-                     val localization = Localization.fromLocale(java.util.Locale.ENGLISH)
+                     val localization = currentExtractorLocalization()
                      NewPipe.init(NewPipe.getDownloader(), localization, country)
                 } catch (initEx: Exception) {
                      Log.e("YouTubeRepository", "Failed to re-init NewPipe", initEx)
@@ -746,7 +747,7 @@ class YouTubeRepository @Inject constructor(
     ): List<Video> = withContext(Dispatchers.IO) {
         val effectiveRegion = region.ifBlank { playerPreferences.trendingRegion.first() }
         val country = ContentCountry(effectiveRegion)
-        val localization = Localization.fromLocale(java.util.Locale.ENGLISH)
+        val localization = currentExtractorLocalization()
         NewPipe.init(NewPipe.getDownloader(), localization, country)
 
         when (category) {
@@ -1313,45 +1314,24 @@ class YouTubeRepository @Inject constructor(
         }
     }
 
+    /**
+     * The language to ask the extractor in, from the user's setting.
+     *
+     * These three call sites re-initialise NewPipe per request to set the content country, and each
+     * of them used to pin the language to English on the way past — which is why a German device saw
+     * English titles even after the app-wide default was fixed.
+     */
+    private suspend fun currentExtractorLocalization(): Localization =
+        io.github.aedev.flow.utils.extractorLocalization(playerPreferences.appLanguage.first())
+
     private fun resolveUploadTimestamp(absoluteMillis: Long?, textualDate: String?): Long {
         absoluteMillis?.let { if (it > 0L) return it }
         val parsed = parseRelativeUploadDate(textualDate)
         return parsed ?: System.currentTimeMillis()
     }
 
-    private fun parseRelativeUploadDate(textualDate: String?): Long? {
-        val raw = textualDate?.trim().orEmpty()
-        if (raw.isBlank()) return null
-
-        val normalized = raw.lowercase(Locale.US)
-            .replace("streamed", "")
-            .replace("premiered", "")
-            .replace("ago", "")
-            .trim()
-
-        if (normalized.contains("just now") || normalized.contains("today")) {
-            return System.currentTimeMillis()
-        }
-        if (normalized.contains("yesterday")) {
-            return System.currentTimeMillis() - 24L * 60L * 60L * 1000L
-        }
-
-        val value = Regex("(\\d+)").find(normalized)?.groupValues?.getOrNull(1)?.toLongOrNull()
-            ?: return null
-
-        val unitMillis = when {
-            normalized.contains("second") || normalized.endsWith("s") -> 1_000L
-            normalized.contains("minute") || normalized.endsWith("m") -> 60_000L
-            normalized.contains("hour") || normalized.endsWith("h") -> 3_600_000L
-            normalized.contains("day") || normalized.endsWith("d") -> 86_400_000L
-            normalized.contains("week") || normalized.endsWith("w") -> 7L * 86_400_000L
-            normalized.contains("month") || normalized.endsWith("mo") -> 30L * 86_400_000L
-            normalized.contains("year") || normalized.endsWith("y") -> 365L * 86_400_000L
-            else -> return null
-        }
-
-        return System.currentTimeMillis() - (value * unitMillis)
-    }
+    private fun parseRelativeUploadDate(textualDate: String?): Long? =
+        io.github.aedev.flow.utils.parseRelativeUploadDateMillis(textualDate)
 
     private fun <T> takeRotatingWindow(items: List<T>, start: Int, count: Int): List<T> {
         if (items.isEmpty() || count <= 0) return emptyList()
@@ -1430,11 +1410,8 @@ internal fun parseDurationTextToSeconds(text: String?): Int {
     }
 }
 
-internal fun String?.isLiveViewCountText(): Boolean {
-    if (isNullOrBlank()) return false
-    val lower = lowercase(Locale.US)
-    return lower.contains("watching") || lower.contains("viewer")
-}
+/** See [io.github.aedev.flow.utils.isLiveViewerText] — one marker list for every caller. */
+internal fun String?.isLiveViewCountText(): Boolean = this.isLiveViewerText()
 
 internal object WatchMetadataVideoMapper {
     fun relatedVideos(resp: WatchMetadataResponse): List<Video> = resp.relatedVideos().mapNotNull { cv ->

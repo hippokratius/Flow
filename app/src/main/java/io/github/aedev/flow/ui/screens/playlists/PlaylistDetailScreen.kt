@@ -1140,29 +1140,16 @@ private fun Video.effectivePlaylistUploadTimestamp(now: Long = System.currentTim
     }
 }
 
+/**
+ * How long ago, as a duration rather than a timestamp — the playlist list sorts by age.
+ *
+ * Shares one bilingual implementation with the other five copies of this parser; the extractor
+ * answers in the user's language now, and an unrecognised date used to fall through to "unknown".
+ */
 private fun parseRelativeDurationMillis(text: String): Long? {
-    val normalized = text.lowercase()
-        .replace("streamed", "")
-        .replace("premiered", "")
-        .replace("ago", "")
-        .trim()
-    if (normalized.isBlank() || normalized == "unknown") return null
-    if (normalized.contains("just now") || normalized == "today") return 0L
-    if (normalized.contains("yesterday")) return 24L * 60L * 60L * 1000L
-
-    val value = Regex("(\\d+)").find(normalized)?.groupValues?.getOrNull(1)?.toLongOrNull()
-        ?: return null
-    val unit = when {
-        normalized.contains("second") || normalized.matches(Regex(".*\\d+\\s*s$")) -> 1_000L
-        normalized.contains("minute") || normalized.matches(Regex(".*\\d+\\s*m$")) -> 60_000L
-        normalized.contains("hour") || normalized.matches(Regex(".*\\d+\\s*h$")) -> 3_600_000L
-        normalized.contains("day") || normalized.matches(Regex(".*\\d+\\s*d$")) -> 86_400_000L
-        normalized.contains("week") || normalized.matches(Regex(".*\\d+\\s*w$")) -> 7L * 86_400_000L
-        normalized.contains("month") || normalized.matches(Regex(".*\\d+\\s*mo$")) -> 30L * 86_400_000L
-        normalized.contains("year") || normalized.matches(Regex(".*\\d+\\s*y$")) -> 365L * 86_400_000L
-        else -> return null
-    }
-    return value * unit
+    val now = System.currentTimeMillis()
+    val uploadedAt = io.github.aedev.flow.utils.parseRelativeUploadDateMillis(text, now) ?: return null
+    return (now - uploadedAt).coerceAtLeast(0L)
 }
 
 private fun formatRelativeTime(timestamp: Long, now: Long): String {

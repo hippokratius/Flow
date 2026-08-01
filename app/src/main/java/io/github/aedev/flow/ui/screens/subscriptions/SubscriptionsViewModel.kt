@@ -1230,10 +1230,17 @@ private fun Video.toSubscriptionFeedEntity(
     cachedAt = cachedAtMillis
 )
 
+/**
+ * "live" and "stream" carry across both languages; the rest does not. The extractor answers in the
+ * user's language now, so the German markers have to be here or a German user's live videos stop
+ * being recognised as live.
+ */
 private fun String.containsLiveMarker(): Boolean {
     val text = lowercase()
     return text.contains("live") ||
         text.contains("stream") ||
         text.contains("watching") ||
-        text.contains("started")
+        text.contains("started") ||
+        text.contains("zuschauer") ||
+        text.contains("gestartet")
 }

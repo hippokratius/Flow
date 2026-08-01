@@ -47,6 +47,7 @@ import io.github.aedev.flow.data.model.Comment
 import io.github.aedev.flow.ui.components.AddToPlaylistDialog
 import io.github.aedev.flow.ui.components.VideoInfoSection
 import io.github.aedev.flow.ui.components.VideoSourceTabs
+import io.github.aedev.flow.utils.hasStreamedPrefix
 import io.github.aedev.flow.ui.screens.player.state.PlayerScreenState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -107,7 +108,11 @@ fun VideoInfoContent(
         val isArchivedLivestream = streamInfo.streamType == StreamType.POST_LIVE_STREAM
         when {
             rawDate.isNullOrBlank() -> null
-            isArchivedLivestream && !rawDate.startsWith("Streamed", ignoreCase = true) -> "Streamed $rawDate"
+            // The extractor already says "Streamed …" / "Gestreamt …" in its own language when it
+            // knows; only add the prefix when it did not. Matching on the English word alone meant
+            // a German date got one stacked on top: "Streamed Gestreamt vor 3 Tagen".
+            isArchivedLivestream && !rawDate.hasStreamedPrefix() ->
+                context.getString(R.string.streamed_on_template, rawDate)
             else -> rawDate
         }
     }

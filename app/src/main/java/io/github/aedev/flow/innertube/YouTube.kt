@@ -1,5 +1,7 @@
 package io.github.aedev.flow.innertube
 
+import io.github.aedev.flow.utils.isLiveViewerText
+
 import io.github.aedev.flow.innertube.models.AccountInfo
 import io.github.aedev.flow.innertube.models.YTItem
 import io.github.aedev.flow.innertube.models.AlbumItem
@@ -805,7 +807,7 @@ object YouTube {
             uploadDate = uploadText,
             timestamp = parseRelativeUploadDate(uploadText) ?: 0L,
             channelThumbnailUrl = channelThumbnailUrl,
-            isLive = isLive || viewsText?.contains("watching", ignoreCase = true) == true,
+            isLive = isLive || viewsText.isLiveViewerText(),
         )
     }
 
@@ -835,7 +837,7 @@ object YouTube {
             timestamp = parseRelativeUploadDate(uploadText) ?: 0L,
             channelThumbnailUrl = avatarUrls.firstOrNull().orEmpty(),
             channelThumbnailUrls = avatarUrls,
-            isLive = isLive || viewsText?.contains("watching", ignoreCase = true) == true,
+            isLive = isLive || viewsText.isLiveViewerText(),
         )
     }
 
@@ -1003,34 +1005,8 @@ object YouTube {
         return (number * multiplier).toLong()
     }
 
-    private fun parseRelativeUploadDate(text: String?): Long? {
-        val normalized = text?.lowercase(Locale.US)
-            ?.replace("streamed", "")
-            ?.replace("premiered", "")
-            ?.replace("live", "")
-            ?.replace("ago", "")
-            ?.trim()
-            ?: return null
-
-        if (normalized.isBlank()) return null
-        if (normalized.contains("just now") || normalized.contains("today")) return System.currentTimeMillis()
-        if (normalized.contains("yesterday")) return System.currentTimeMillis() - 24L * 60L * 60L * 1000L
-
-        val value = Regex("""(\d+)""").find(normalized)?.groupValues?.getOrNull(1)?.toLongOrNull()
-            ?: return null
-        val unitMillis = when {
-            normalized.contains("second") || normalized.endsWith("s") -> 1_000L
-            normalized.contains("minute") || normalized.endsWith("m") -> 60_000L
-            normalized.contains("hour") || normalized.endsWith("h") -> 3_600_000L
-            normalized.contains("day") || normalized.endsWith("d") -> 86_400_000L
-            normalized.contains("week") || normalized.endsWith("w") -> 7L * 86_400_000L
-            normalized.contains("month") || normalized.endsWith("mo") -> 30L * 86_400_000L
-            normalized.contains("year") || normalized.endsWith("y") -> 365L * 86_400_000L
-            else -> return null
-        }
-
-        return System.currentTimeMillis() - (value * unitMillis)
-    }
+    private fun parseRelativeUploadDate(text: String?): Long? =
+        io.github.aedev.flow.utils.parseRelativeUploadDateMillis(text)
 
     suspend fun album(browseId: String, withSongs: Boolean = true): Result<AlbumPage> = runCatching {
         val response = innerTube.browse(WEB_REMIX, browseId).body<BrowseResponse>()
