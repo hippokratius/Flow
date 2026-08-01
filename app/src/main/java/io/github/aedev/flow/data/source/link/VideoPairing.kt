@@ -24,8 +24,22 @@ import io.github.aedev.flow.data.model.Video
  * because PeerTube generates its own preview on import rather than copying YouTube's.
  */
 
-/** Duration difference still considered the same upload. Re-encodes shift a second or two. */
-const val DEFAULT_DURATION_TOLERANCE_SECONDS = 5
+/*
+ * How far the two runtimes may differ.
+ *
+ * The first version allowed five seconds, on the assumption that a mirror is a re-encode of the same
+ * file. Real channels do not work that way: c't 3003 publishes the same episode as 14:43 on
+ * peertube.heise.de and 15:48 on YouTube — a minute apart, because the platform versions carry
+ * different intros and outros. Five seconds rejected every real pair, and since one predicate feeds
+ * the shared channel page, the source switch and the redirect alike, the whole feature stayed
+ * invisible.
+ *
+ * So the runtime stops being the deciding criterion and becomes a sanity check: an exactly equal
+ * normalised title already carries most of the evidence, and this only has to rule out the case
+ * where a channel reuses a title for something of a wholly different length.
+ */
+const val MIN_DURATION_TOLERANCE_SECONDS = 90
+const val DURATION_TOLERANCE_FRACTION = 0.2
 
 /**
  * A title reduced to what two platforms can agree on.
@@ -52,28 +66,48 @@ private val BRACKETED = Regex("""[\[(][^\])]*[\])]""")
  *
  * Titles must match **exactly** once normalised — not as substrings. A false positive here plays a
  * different video than the one tapped, which is far worse than missing a pair, and substring matching
- * would happily equate "Part 1" with "Part 1 Reaction". Durations must both be known: PeerTube reports
- * 0 for a video still being transcoded, and 0 == 0 would pair every such video with every other.
+ * would happily equate "Part 1" with "Part 1 Reaction". That equality carries the match; the runtime
+ * only has to be in the same ballpark.
+ *
+ * An unknown runtime — PeerTube reports 0 while a video is still transcoding — no longer rejects the
+ * pair. It used to, which meant a freshly imported video was unpairable for exactly as long as it was
+ * new, and new is when someone looks at it.
  */
-fun isSameUpload(
-    a: Video,
-    b: Video,
-    toleranceSeconds: Int = DEFAULT_DURATION_TOLERANCE_SECONDS,
-): Boolean {
-    if (a.duration <= 0 || b.duration <= 0) return false
-    if (kotlin.math.abs(a.duration - b.duration) > toleranceSeconds) return false
-
+fun isSameUpload(a: Video, b: Video): Boolean {
     val titleA = normalizeTitle(a.title)
     val titleB = normalizeTitle(b.title)
-    return titleA.isNotEmpty() && titleA == titleB
+    if (titleA.isEmpty() || titleA != titleB) return false
+
+    return durationsArePlausible(a.duration, b.duration)
 }
 
-/** The entry in [candidates] that is the same upload as [video], or null when there is none. */
-fun findCounterpart(
-    video: Video,
-    candidates: List<Video>,
-    toleranceSeconds: Int = DEFAULT_DURATION_TOLERANCE_SECONDS,
-): Video? = candidates.firstOrNull { isSameUpload(video, it, toleranceSeconds) }
+/** True when the two runtimes are close enough, or when one of them is not known yet. */
+private fun durationsArePlausible(a: Int, b: Int): Boolean {
+    if (a <= 0 || b <= 0) return true
+    val tolerance = maxOf(
+        MIN_DURATION_TOLERANCE_SECONDS,
+        (maxOf(a, b) * DURATION_TOLERANCE_FRACTION).toInt(),
+    )
+    return kotlin.math.abs(a - b) <= tolerance
+}
+
+/**
+ * The entry in [candidates] that is the same upload as [video], or null when there is none.
+ *
+ * Takes the **closest** match rather than the first one. With the runtime relaxed to a sanity check,
+ * a channel that reuses a title across episodes can produce several candidates, and "whichever came
+ * back first from the API" is not an answer — the nearest runtime, and then the nearest publication
+ * date, is.
+ */
+fun findCounterpart(video: Video, candidates: List<Video>): Video? =
+    candidates
+        .filter { isSameUpload(video, it) }
+        .minWithOrNull(
+            compareBy(
+                { if (it.duration > 0 && video.duration > 0) kotlin.math.abs(it.duration - video.duration) else Int.MAX_VALUE },
+                { kotlin.math.abs(it.timestamp - video.timestamp) },
+            )
+        )
 
 /**
  * One chronological list for a linked pair of channels, newest first.
@@ -82,16 +116,12 @@ fun findCounterpart(
  * of the feature: the same content, from the decentralised source. Everything unpaired from either
  * side is kept, so nothing disappears just because the other platform does not have it.
  */
-fun mergeLinkedChannelVideos(
-    youtube: List<Video>,
-    peerTube: List<Video>,
-    toleranceSeconds: Int = DEFAULT_DURATION_TOLERANCE_SECONDS,
-): List<Video> {
+fun mergeLinkedChannelVideos(youtube: List<Video>, peerTube: List<Video>): List<Video> {
     if (peerTube.isEmpty()) return youtube.sortedByDescending { it.timestamp }
     if (youtube.isEmpty()) return peerTube.sortedByDescending { it.timestamp }
 
     val youtubeOnly = youtube.filter { candidate ->
-        findCounterpart(candidate, peerTube, toleranceSeconds) == null
+        findCounterpart(candidate, peerTube) == null
     }
     return (peerTube + youtubeOnly)
         .distinctBy { it.id }

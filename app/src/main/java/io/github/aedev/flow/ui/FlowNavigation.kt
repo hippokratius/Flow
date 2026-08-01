@@ -637,7 +637,9 @@ fun NavGraphBuilder.flowAppGraph(
             linked = { linkedId ->
                 LinkedChannelScreen(
                     channelId = linkedId,
-                    onVideoClick = { video -> navController.navigate("player/${video.id}") },
+                    // Hands the whole Video over instead of routing by id: the id-only route builds
+                    // a blank placeholder, which a federated video never recovers from.
+                    onVideoClick = { video -> playerViewModel.playVideoPreferringPeerTube(video) },
                     onBackClick = { navController.popBackStack() },
                     onOpenYoutubeChannel = { youtubeId ->
                         // Straight to the plain page, bypassing the gate that sent us here.
@@ -693,7 +695,7 @@ fun NavGraphBuilder.flowAppGraph(
             linked = { linkedId ->
                 LinkedChannelScreen(
                     channelId = linkedId,
-                    onVideoClick = { video -> navController.navigate("player/${video.id}") },
+                    onVideoClick = { video -> playerViewModel.playVideoPreferringPeerTube(video) },
                     onBackClick = { navController.popBackStack() },
                     onOpenYoutubeChannel = { youtubeId ->
                         youtubeChannelRoute(youtubeId)?.let { navController.navigate("$it&plain=true") }
@@ -703,7 +705,7 @@ fun NavGraphBuilder.flowAppGraph(
         ) {
             PeerTubeChannelScreen(
                 channelId = peerTubeChannelId,
-                onVideoClick = { video -> navController.navigate("player/${video.id}") },
+                onVideoClick = { video -> playerViewModel.playVideoPreferringPeerTube(video) },
                 onBackClick = { navController.popBackStack() },
                 onOpenLinkedChannel = { linkedId -> navController.navigateToYoutubeChannel(linkedId) }
             )

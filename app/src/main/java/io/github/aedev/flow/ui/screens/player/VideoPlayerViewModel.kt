@@ -570,11 +570,22 @@ class VideoPlayerViewModel @Inject constructor(
         }
 
         // Is the same upload available on the other platform? Answered per played video.
+        //
+        // Filtered on the fields the answer depends on, not on the id alone. A video reached by id
+        // — from a channel page, a deep link, a notification — arrives as a placeholder with no
+        // title and no duration, so the first attempt gives up; the metadata that lands afterwards
+        // keeps the same id, and an id-only filter swallowed exactly the emission worth reacting to.
+        //
         // Combined with the links so a video started before the store had loaded — or while the
-        // user was linking its channel — still gets its tab.
+        // user was linking its channel — still gets its switch.
         viewModelScope.launch {
             combine(
-                uiState.map { it.cachedVideo }.distinctUntilChangedBy { it?.id },
+                uiState.map { it.cachedVideo }.distinctUntilChanged { old, new ->
+                    old?.id == new?.id &&
+                        old?.title == new?.title &&
+                        old?.duration == new?.duration &&
+                        old?.channelId == new?.channelId
+                },
                 channelLinks
             ) { video, _ -> video }
                 .collect { video -> resolveCounterpart(video) }
@@ -2850,6 +2861,12 @@ class VideoPlayerViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, error = null, errorHint = null) }
 
+            // Nobody else will. YouTube videos reached by id are filled in by the NewPipe
+            // extraction; a federated one arrives as the bare placeholder that the `player/{id}`
+            // route builds and stays that way — no title, no channel, zero views — because this
+            // function used to do nothing but start the stream.
+            launch { enrichExternalSourceVideo(contentId) }
+
             val spec = externalSourcePlaybackLoader.start(context, contentId, resumePositionMs)
             if (spec == null) {
                 _uiState.update {
@@ -2864,6 +2881,46 @@ class VideoPlayerViewModel @Inject constructor(
 
             _uiState.update { it.copy(isLoading = false, error = null, errorHint = null) }
             applyRememberedPlaybackSpeed(isLive = spec.isLive, manager = EnhancedPlayerManager.getInstance())
+        }
+    }
+
+    /**
+     * Fills in what the player knows about a federated video.
+     *
+     * Mirrors the YouTube enrichment further up: only blank fields are replaced, so a video opened
+     * from a feed — which already carries everything — is left alone, and one opened by id gets its
+     * title, channel, runtime and view count. The runtime matters beyond the display: without it the
+     * pairing cannot even try, so the source switch depended on this too.
+     */
+    private suspend fun enrichExternalSourceVideo(contentId: io.github.aedev.flow.data.source.ContentId) {
+        val videoId = contentId.raw
+        val cached = _uiState.value.cachedVideo?.takeIf { it.id == videoId } ?: return
+        if (cached.title.isNotBlank() && cached.duration > 0 && cached.channelId.isNotBlank()) return
+
+        val fetched = contentSourceRegistry.forId(contentId)
+            ?.let { source -> runCatching { source.video(contentId) }.getOrNull() }
+            ?: return
+
+        withContext(Dispatchers.Main) {
+            val current = _uiState.value.cachedVideo?.takeIf { it.id == videoId } ?: return@withContext
+            val enriched = current.copy(
+                title = current.title.ifBlank { fetched.title },
+                channelName = current.channelName.ifBlank { fetched.channelName },
+                channelId = current.channelId.ifBlank { fetched.channelId },
+                channelThumbnailUrl = current.channelThumbnailUrl.ifBlank { fetched.channelThumbnailUrl },
+                thumbnailUrl = current.thumbnailUrl.ifBlank { fetched.thumbnailUrl },
+                duration = current.duration.takeIf { it > 0 } ?: fetched.duration,
+                viewCount = current.viewCount.takeIf { it > 0L } ?: fetched.viewCount,
+                description = current.description.ifBlank { fetched.description },
+                timestamp = current.timestamp.takeIf { it > 0L } ?: fetched.timestamp,
+                uploadDate = current.uploadDate.ifBlank { fetched.uploadDate },
+                source = fetched.source,
+                instanceHost = current.instanceHost ?: fetched.instanceHost,
+            )
+            if (enriched == current) return@withContext
+            GlobalPlayerState.setCurrentVideo(enriched)
+            _uiState.update { it.copy(cachedVideo = enriched) }
+            saveHistoryEntry(enriched)
         }
     }
 

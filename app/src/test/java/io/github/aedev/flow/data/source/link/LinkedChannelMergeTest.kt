@@ -86,14 +86,28 @@ class LinkedChannelMergeTest {
         assertThat(merged).hasSize(1)
     }
 
-    /** Nothing is paired when durations are unknown, so nothing may be dropped either. */
+    /** An unknown runtime pairs on the title alone, so the PeerTube copy is the one that stays. */
     @Test
-    fun `videos with unknown durations are all kept`() {
+    fun `videos with unknown durations pair on their title`() {
         val merged = mergeLinkedChannelVideos(
             listOf(video("y", "Same title", duration = 0)),
             listOf(video("p", "Same title", duration = 0, source = SourceKind.PEERTUBE)),
         )
 
-        assertThat(merged.map { it.id }).containsExactly("y", "p")
+        assertThat(merged.map { it.id }).containsExactly("p")
+    }
+
+    /**
+     * Straight from the screenshot that started this: the shared page listed "Genialer als gedacht!"
+     * twice, once as 14:43 from peertube.heise.de and once as 15:48 from YouTube.
+     */
+    @Test
+    fun `the same episode with different intros collapses into one entry`() {
+        val merged = mergeLinkedChannelVideos(
+            listOf(video("yt", "Genialer als gedacht!", 948, timestamp = 100)),
+            listOf(video("pt", "Genialer als gedacht!", 883, timestamp = 90, source = SourceKind.PEERTUBE)),
+        )
+
+        assertThat(merged.map { it.id }).containsExactly("pt")
     }
 }
