@@ -10,6 +10,8 @@ import androidx.paging.PagingData
 import androidx.paging.cachedIn
 import io.github.aedev.flow.data.local.SubscriptionRepository
 import io.github.aedev.flow.data.local.ChannelSubscription
+import io.github.aedev.flow.data.source.link.ChannelLinkSubscriptionMirror
+import io.github.aedev.flow.data.source.link.channelLinkStore
 import io.github.aedev.flow.data.model.Video
 import io.github.aedev.flow.data.model.Comment
 import io.github.aedev.flow.data.model.distinctByNonBlankKey
@@ -366,6 +368,7 @@ class ChannelViewModel : ViewModel() {
                 )
                 subscriptionRepository?.subscribe(subscription)
             }
+            mirrorToLinkedChannel(channelId, subscribed = !state.isSubscribed)
         }
     }
 
@@ -374,7 +377,24 @@ class ChannelViewModel : ViewModel() {
             val state = _uiState.value
             val channelId = state.channelId ?: return@launch
             subscriptionRepository?.unsubscribe(channelId)
+            mirrorToLinkedChannel(channelId, subscribed = false)
         }
+    }
+
+    /**
+     * Carries the subscription across to this creator's PeerTube channel, when the user has linked
+     * one. No-op otherwise, and no-op if they turned the mirroring off.
+     *
+     * Reached through a Hilt entry point because this ViewModel has no injection — converting it
+     * would be a far larger edit to an upstream file than reading two singletons out of the graph.
+     */
+    private suspend fun mirrorToLinkedChannel(channelId: String, subscribed: Boolean) {
+        val context = if (::appContext.isInitialized) appContext else return
+        val repository = subscriptionRepository ?: return
+        runCatching {
+            ChannelLinkSubscriptionMirror(channelLinkStore(context), repository)
+                .mirror(channelId, subscribed)
+        }.onFailure { Log.w(TAG, "Could not mirror subscription for $channelId", it) }
     }
 
     fun setNotificationState(enabled: Boolean) {
@@ -615,34 +635,8 @@ class ChannelViewModel : ViewModel() {
         )
     }
 
-    private fun parseRelativeUploadDate(text: String?): Long? {
-        val normalized = text?.lowercase(Locale.US)
-            ?.replace("streamed", "")
-            ?.replace("premiered", "")
-            ?.replace("live", "")
-            ?.replace("ago", "")
-            ?.trim()
-            ?: return null
-
-        if (normalized.isBlank()) return null
-        if (normalized.contains("just now") || normalized.contains("today")) return System.currentTimeMillis()
-        if (normalized.contains("yesterday")) return System.currentTimeMillis() - 24L * 60L * 60L * 1000L
-
-        val value = Regex("(\\d+)").find(normalized)?.groupValues?.getOrNull(1)?.toLongOrNull()
-            ?: return null
-        val unitMillis = when {
-            normalized.contains("second") || normalized.endsWith("s") -> 1_000L
-            normalized.contains("minute") || normalized.endsWith("m") -> 60_000L
-            normalized.contains("hour") || normalized.endsWith("h") -> 3_600_000L
-            normalized.contains("day") || normalized.endsWith("d") -> 86_400_000L
-            normalized.contains("week") || normalized.endsWith("w") -> 7L * 86_400_000L
-            normalized.contains("month") || normalized.endsWith("mo") -> 30L * 86_400_000L
-            normalized.contains("year") || normalized.endsWith("y") -> 365L * 86_400_000L
-            else -> return null
-        }
-
-        return System.currentTimeMillis() - (value * unitMillis)
-    }
+    private fun parseRelativeUploadDate(text: String?): Long? =
+        io.github.aedev.flow.utils.parseRelativeUploadDateMillis(text)
 }
 
 data class ChannelUiState(

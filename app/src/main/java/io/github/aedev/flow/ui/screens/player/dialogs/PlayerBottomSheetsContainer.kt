@@ -158,9 +158,14 @@ fun PlayerBottomSheetsContainer(
 
     // Description Bottom Sheet
     if (screenState.showDescriptionSheet) {
-        val currentVideo = remember(uiState.streamInfo, video) {
+        // The source tab shows the other copy's description; null for every video without a
+        // counterpart, which leaves the sheet exactly as it was.
+        val infoOverride = uiState.infoVideo
+        val currentVideo = remember(uiState.streamInfo, video, infoOverride) {
             val streamInfo = uiState.streamInfo
-            if (streamInfo != null) {
+            if (infoOverride != null) {
+                infoOverride
+            } else if (streamInfo != null) {
                 Video(
                     id = streamInfo.id ?: video.id,
                     title = streamInfo.name ?: video.title,
@@ -189,7 +194,8 @@ fun PlayerBottomSheetsContainer(
 
         FlowDescriptionBottomSheet(
             video = currentVideo,
-            tags = uiState.streamInfo?.tags ?: emptyList(),
+            // The stream info belongs to the playing video; its tags do not describe the other copy.
+            tags = if (infoOverride != null) emptyList() else uiState.streamInfo?.tags ?: emptyList(),
             onTimestampClick = handleTimestampClick,
             expandedHeight = mediaSheetExpandedHeight,
             collapsedHeight = mediaSheetCollapsedHeight,

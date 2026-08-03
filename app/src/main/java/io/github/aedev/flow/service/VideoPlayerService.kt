@@ -90,7 +90,7 @@ class VideoPlayerService : MediaSessionService() {
         FlowCrashHandler.recordPhase("video-service", "onCreate")
         val notificationProvider = DefaultMediaNotificationProvider.Builder(this)
             .setChannelId(MEDIA_CHANNEL_ID)
-            .setChannelName(R.string.app_name)
+            .setChannelName(R.string.app_brand_name)
             .build()
             .apply { setSmallIcon(R.drawable.ic_notification_logo) }
         setMediaNotificationProvider(notificationProvider)

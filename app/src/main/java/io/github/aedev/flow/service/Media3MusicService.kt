@@ -940,7 +940,7 @@ class Media3MusicService : MediaLibraryService() {
                 LibraryResult.ofItem(
                     browsableMediaItem(
                         mediaId = AUTO_ROOT_ID,
-                        title = getString(R.string.app_name)
+                        title = getString(R.string.app_brand_name)
                     ),
                     params
                 )
@@ -980,7 +980,7 @@ class Media3MusicService : MediaLibraryService() {
         ): ListenableFuture<LibraryResult<MediaItem>> {
             val track = autoTrackForMediaId(mediaId)
             val item = when {
-                mediaId == AUTO_ROOT_ID -> browsableMediaItem(AUTO_ROOT_ID, getString(R.string.app_name))
+                mediaId == AUTO_ROOT_ID -> browsableMediaItem(AUTO_ROOT_ID, getString(R.string.app_brand_name))
                 mediaId == AUTO_QUEUE_ID -> browsableMediaItem(AUTO_QUEUE_ID, "Queue")
                 mediaId == AUTO_CURRENT_ID -> browsableMediaItem(AUTO_CURRENT_ID, "Now playing")
                 track != null -> track.toAutoMediaItem()

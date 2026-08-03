@@ -11,6 +11,7 @@ import io.github.aedev.flow.data.model.Video
 import io.github.aedev.flow.player.EnhancedPlayerManager
 import io.github.aedev.flow.player.state.EnhancedPlayerState
 import io.github.aedev.flow.ui.screens.player.VideoPlayerUiState
+import io.github.aedev.flow.ui.components.videoSourceLabel
 import io.github.aedev.flow.ui.screens.player.VideoPlayerViewModel
 import io.github.aedev.flow.ui.screens.player.components.*
 import io.github.aedev.flow.ui.screens.player.components.PlayerSettingsPage
@@ -38,6 +39,7 @@ fun PlayerDialogsContainer(
     val ambientModeEnabled by playerPreferences.videoAmbientModeEnabled.collectAsState(initial = false)
     val groupedQualitySelectorEnabled by playerPreferences.groupedQualitySelectorEnabled.collectAsState(initial = false)
     val coroutineScope = rememberCoroutineScope()
+    val playbackCounterpart by viewModel.counterpartVideo.collectAsState()
 
     LaunchedEffect(Unit) {
         playerPreferences.subtitleStyle.collect { style ->
@@ -156,7 +158,10 @@ fun PlayerDialogsContainer(
             expandedHeight = mediaSheetExpandedHeight,
             collapsedHeight = mediaSheetCollapsedHeight,
             useGroupedQualitySelector = groupedQualitySelectorEnabled,
-            onSheetProgressChange = onMediaSheetProgressChange
+            onSheetProgressChange = onMediaSheetProgressChange,
+            // Only offered when this upload exists on both platforms; null hides the row.
+            playbackSourceLabel = if (playbackCounterpart != null) videoSourceLabel(video) else null,
+            onPlaybackSourceClick = { viewModel.switchPlaybackSource() }
         )
     }
 

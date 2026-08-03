@@ -1,5 +1,8 @@
 package io.github.aedev.flow.utils
 
+import io.github.aedev.flow.data.source.ContentId
+import io.github.aedev.flow.data.source.SourceKind
+
 object ThumbnailUrlResolver {
     private val youtubeVideoThumbnailPattern =
         Regex("""(?:https?:)?//(?:i\d*\.ytimg\.com|img\.youtube\.com)/(?:vi|vi_webp)/([^/?#]+)/[^/?#]+""")
@@ -59,6 +62,10 @@ object ThumbnailUrlResolver {
 
     fun normalizeVideoThumbnail(videoId: String, rawUrl: String?): String {
         val raw = rawUrl?.trim().orEmpty()
+        // Only YouTube ids can be turned into an i.ytimg.com URL. For any other source, an empty
+        // thumbnail must stay empty rather than become a fabricated, permanently broken link — this
+        // is the same escape hatch local media already relies on.
+        if (ContentId(videoId).kind != SourceKind.YOUTUBE) return raw
         if (raw.isEmpty()) return buildHighQualityYoutubeThumbnail(videoId)
 
         if (!youtubeVideoThumbnailPattern.containsMatchIn(raw)) return raw

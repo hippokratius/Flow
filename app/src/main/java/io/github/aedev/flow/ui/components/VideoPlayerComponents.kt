@@ -90,6 +90,13 @@ fun VideoInfoSection(
     onDescriptionClick: () -> Unit,
     isSaved: Boolean = false,
     isDownloaded: Boolean = false,
+    /**
+     * Rendered between the title and the view count, where TubeHub puts the PeerTube/YouTube
+     * switch. A slot rather than four more parameters: this composable already takes 25, and it has
+     * no business knowing what a content source is — everything below simply receives the values of
+     * whichever side the caller selected.
+     */
+    sourceSwitch: (@Composable () -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     var showCollaborators by remember { mutableStateOf(false) }
@@ -145,6 +152,8 @@ fun VideoInfoSection(
             )
         )
         
+        sourceSwitch?.invoke()
+
         // View count and date in a subtle row below title
         Row(
             modifier = Modifier
@@ -219,13 +228,23 @@ fun VideoInfoSection(
                         overflow = TextOverflow.Ellipsis
                     )
                     
+                    // Follower count and instance on one line, so a federated channel takes the
+                    // same two rows as a YouTube one instead of three.
+                    //
+                    // The player shows no thumbnail, so the card badge cannot carry the origin
+                    // here. Naming the instance is also more useful than a generic mark: which
+                    // server a federated video came from is the part that actually varies.
                     val subText = subscriberCount?.let { formatSubscriberCount(it) } ?: ""
-                    if (subText.isNotEmpty()) {
+                    val host = video.instanceHost?.takeIf { it.isNotBlank() }
+                    val secondLine = listOfNotNull(subText.takeIf { it.isNotEmpty() }, host)
+                        .joinToString(" • ")
+                    if (secondLine.isNotEmpty()) {
                         Text(
-                            text = subText,
+                            text = secondLine,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.extendedColors.textSecondary,
-                            maxLines = 1
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                 }

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Android 12 and above (android:dataExtractionRules).
+
+    Excluded from both cloud backup and device-to-device transfer for the same reason as
+    backup_rules.xml: the store holds a Fediverse write token. Device transfer is listed separately
+    because Android treats it as a distinct channel — an exclusion from one does not imply the other.
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="file" path="datastore/tubehub_preferences.preferences_pb" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="file" path="datastore/tubehub_preferences.preferences_pb" />
+    </device-transfer>
+</data-extraction-rules>

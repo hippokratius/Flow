@@ -48,6 +48,9 @@ import io.github.aedev.flow.ui.screens.personality.FlowPersonalityScreen
 import io.github.aedev.flow.ui.screens.shorts.ShortsScreen
 import io.github.aedev.flow.ui.screens.subscriptions.SubscriptionsScreen
 import io.github.aedev.flow.ui.screens.channel.ChannelScreen
+import io.github.aedev.flow.ui.screens.channel.peertube.PeerTubeChannelScreen
+import io.github.aedev.flow.ui.screens.channel.linked.LinkedChannelGate
+import io.github.aedev.flow.ui.screens.channel.linked.LinkedChannelScreen
 import io.github.aedev.flow.ui.screens.onboarding.OnboardingScreen
 import io.github.aedev.flow.ui.theme.CustomThemePalettes
 import io.github.aedev.flow.ui.theme.ThemeMode
@@ -119,14 +122,14 @@ fun NavGraphBuilder.flowAppGraph(
                 if (video.isShort && !disableShortsPlayer) {
                     navController.navigate("shorts?startVideoId=${video.id}")
                 } else {
-                    playerViewModel.playVideo(video)
-                    GlobalPlayerState.setCurrentVideo(video)
+                    // No setCurrentVideo here: with a linked channel the video that starts may be
+                    // the PeerTube copy, and playVideo publishes whichever one that is.
+                    playerViewModel.playVideoPreferringPeerTube(video)
                 }
             },
             onShortClick = { video ->
                 if (disableShortsPlayer) {
-                    playerViewModel.playVideo(video)
-                    GlobalPlayerState.setCurrentVideo(video)
+                    playerViewModel.playVideoPreferringPeerTube(video)
                 } else {
                     navController.navigate("shorts?startVideoId=${video.id}")
                 }
@@ -200,8 +203,7 @@ fun NavGraphBuilder.flowAppGraph(
                 if (video.isShort && !disableShortsPlayer) {
                     navController.navigate("shorts?startVideoId=${video.id}")
                 } else {
-                    playerViewModel.playVideo(video)
-                    GlobalPlayerState.setCurrentVideo(video)
+                    playerViewModel.playVideoPreferringPeerTube(video)
                 }
             },
             onShortClick = { videoId ->
@@ -350,6 +352,8 @@ fun NavGraphBuilder.flowAppGraph(
             onNavigateToImport = { navController.navigate("settings/import") },
             onNavigateToPlayerSettings = { navController.navigate("settings/player") },
             onNavigateToProxySettings = { navController.navigate("settings/proxy") },
+            onNavigateToPeerTubeInstances = { navController.navigate("settings/peertube") },
+            onNavigateToChannelLinks = { navController.navigate(channelLinksRoute()) },
             onNavigateToVideoQuality = { navController.navigate("settings/video_quality") },
             onNavigateToShortsQuality = { navController.navigate("settings/shorts_quality") },
             onNavigateToContentSettings = { navController.navigate("settings/content") },
@@ -422,6 +426,37 @@ fun NavGraphBuilder.flowAppGraph(
         showBottomNav.value = false
         io.github.aedev.flow.ui.screens.settings.ProxySettingsScreen(
             onNavigateBack = { navController.popBackStack() }
+        )
+    }
+
+    composable("settings/peertube") {
+        currentRoute.value = "settings/peertube"
+        showBottomNav.value = false
+        io.github.aedev.flow.ui.screens.settings.PeerTubeInstancesScreen(
+            onNavigateBack = { navController.popBackStack() }
+        )
+    }
+
+    // Cross-platform channel links. The optional arguments let a channel page open this already
+    // knowing which YouTube channel the user means, so only the PeerTube half is left to find.
+    composable(
+        route = CHANNEL_LINKS_ROUTE,
+        arguments = listOf(
+            navArgument("youtubeId") { type = NavType.StringType; defaultValue = "" },
+            navArgument("youtubeName") { type = NavType.StringType; defaultValue = "" }
+        )
+    ) { backStackEntry ->
+        currentRoute.value = "settings/channel_links"
+        showBottomNav.value = false
+        val decode = { name: String ->
+            backStackEntry.arguments?.getString(name)
+                ?.let { runCatching { java.net.URLDecoder.decode(it, "UTF-8") }.getOrDefault(it) }
+                .orEmpty()
+        }
+        io.github.aedev.flow.ui.screens.settings.ChannelLinksScreen(
+            onNavigateBack = { navController.popBackStack() },
+            prefilledYoutubeChannelId = decode("youtubeId"),
+            prefilledYoutubeChannelName = decode("youtubeName")
         )
     }
 
@@ -582,39 +617,99 @@ fun NavGraphBuilder.flowAppGraph(
     }
     
     composable(
-        route = "channel?url={channelUrl}",
-        arguments = listOf(navArgument("channelUrl") { type = NavType.StringType })
+        route = YOUTUBE_CHANNEL_ROUTE,
+        arguments = listOf(
+            navArgument("channelUrl") { type = NavType.StringType },
+            navArgument("plain") { type = NavType.BoolType; defaultValue = false }
+        )
     ) { backStackEntry ->
         currentRoute.value = "channel"
         showBottomNav.value = false
         val channelUrl = backStackEntry.arguments?.getString("channelUrl")?.let {
             java.net.URLDecoder.decode(it, "UTF-8")
         } ?: ""
-        
-        ChannelScreen(
-            channelUrl = channelUrl,
-            onVideoClick = { video ->
-                if (video.isShort && !disableShortsPlayer) {
-                    navController.navigate("shorts?startVideoId=${video.id}")
-                } else {
-                    navController.navigate("player/${video.id}")
-                }
-            },
-            onChannelClick = { channelId ->
-                navController.navigateToYoutubeChannel(channelId)
-            },
-            onShortClick = { videoId ->
-                if (disableShortsPlayer) {
-                    navController.navigate("player/$videoId")
-                } else {
-                    navController.navigate("shorts?startVideoId=$videoId")
-                }
-            },
-            onPlaylistClick = { playlistId ->
-                navController.navigate("playlist/$playlistId")
-            },
-            onBackClick = { navController.popBackStack() }
-        )
+        val plainYoutube = backStackEntry.arguments?.getBoolean("plain") ?: false
+
+        // A linked creator gets one page for both platforms; everyone else the page they always had.
+        LinkedChannelGate(
+            channelId = youtubeChannelIdFromUrl(channelUrl),
+            forcePlain = plainYoutube,
+            linked = { linkedId ->
+                LinkedChannelScreen(
+                    channelId = linkedId,
+                    // Hands the whole Video over instead of routing by id: the id-only route builds
+                    // a blank placeholder, which a federated video never recovers from.
+                    onVideoClick = { video -> playerViewModel.playVideoPreferringPeerTube(video) },
+                    onBackClick = { navController.popBackStack() },
+                    onOpenYoutubeChannel = { youtubeId ->
+                        // Straight to the plain page, bypassing the gate that sent us here.
+                        youtubeChannelRoute(youtubeId)?.let { navController.navigate("$it&plain=true") }
+                    }
+                )
+            }
+        ) {
+            ChannelScreen(
+                channelUrl = channelUrl,
+                onVideoClick = { video ->
+                    if (video.isShort && !disableShortsPlayer) {
+                        navController.navigate("shorts?startVideoId=${video.id}")
+                    } else {
+                        navController.navigate("player/${video.id}")
+                    }
+                },
+                onChannelClick = { channelId ->
+                    navController.navigateToYoutubeChannel(channelId)
+                },
+                onShortClick = { videoId ->
+                    if (disableShortsPlayer) {
+                        navController.navigate("player/$videoId")
+                    } else {
+                        navController.navigate("shorts?startVideoId=$videoId")
+                    }
+                },
+                onPlaylistClick = { playlistId ->
+                    navController.navigate("playlist/$playlistId")
+                },
+                onLinkChannel = { channelId, channelName ->
+                    navController.navigate(channelLinksRoute(channelId, channelName))
+                },
+                onBackClick = { navController.popBackStack() }
+            )
+        }
+    }
+
+    // PeerTube channel page — a federated channel has no YouTube URL, so it is addressed by id.
+    composable(
+        route = PEERTUBE_CHANNEL_ROUTE,
+        arguments = listOf(navArgument("channelId") { type = NavType.StringType })
+    ) { backStackEntry ->
+        currentRoute.value = "peertubeChannel"
+        showBottomNav.value = false
+        val peerTubeChannelId = backStackEntry.arguments?.getString("channelId")?.let {
+            java.net.URLDecoder.decode(it, "UTF-8")
+        } ?: ""
+
+        LinkedChannelGate(
+            channelId = peerTubeChannelId,
+            forcePlain = false,
+            linked = { linkedId ->
+                LinkedChannelScreen(
+                    channelId = linkedId,
+                    onVideoClick = { video -> playerViewModel.playVideoPreferringPeerTube(video) },
+                    onBackClick = { navController.popBackStack() },
+                    onOpenYoutubeChannel = { youtubeId ->
+                        youtubeChannelRoute(youtubeId)?.let { navController.navigate("$it&plain=true") }
+                    }
+                )
+            }
+        ) {
+            PeerTubeChannelScreen(
+                channelId = peerTubeChannelId,
+                onVideoClick = { video -> playerViewModel.playVideoPreferringPeerTube(video) },
+                onBackClick = { navController.popBackStack() },
+                onOpenLinkedChannel = { linkedId -> navController.navigateToYoutubeChannel(linkedId) }
+            )
+        }
     }
 
     // History Screen

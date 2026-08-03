@@ -1,6 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Flow</string>
+    <!--
+        Unused by the app itself — see app_brand_name below — but it must stay declared: 23 locale
+        files translate this key, and removing the default would make every one of them an
+        "extra translation" lint error and break the Weblate sync with upstream.
+    -->
+    <string name="app_name">TubeHub</string>
+    <!--
+        The product name, shown in the launcher, the about screen and media notifications.
+
+        A separate, untranslatable key rather than app_name: upstream Flow has app_name translated
+        in 23 locales, so on a non-English device those overrides win and the app would still be
+        called "Flow". Editing those files is forbidden by AGENTS.md and Weblate would revert it
+        anyway — and a brand name is not a translation in the first place.
+    -->
+    <string name="app_brand_name" translatable="false">TubeHub</string>
+    <!-- Same reasoning as app_brand_name; app_name_uppercase is translated in 18 locales. -->
+    <string name="app_brand_name_uppercase" translatable="false">TUBEHUB</string>
     <string name="subscriptions_search_placeholder">Search subscriptions...</string>
     <string name="subscriptions_sort_label">Sort channels</string>
     <string name="subscriptions_sort_default">Default</string>
@@ -302,7 +318,7 @@
     <string name="artist">Artist</string>
     <string name="playlist">Playlist</string>
     <string name="playlist_visibility_metadata">%1$s • %2$s</string>
-    <string name="app_name_uppercase">FLOW</string>
+    <string name="app_name_uppercase">TUBEHUB</string>
     <string name="notification_badge_9_plus">9+</string>
     <string name="personalized_feed">Your personalized feed</string>
     <string name="videos_curated_template">%1$d videos curated just for you</string>
@@ -590,6 +606,16 @@
     <string name="icon_name_flow_red">Flow Red</string>
     <string name="icon_name_flow_light">Flow Light</string>
     <string name="icon_name_flow_play">Flow Play</string>
+    <!--
+        Replacements for the three keys above, which name the upstream project and are translated in
+        13-15 locales each — so editing the defaults alone would leave "Flow Light" showing on most
+        devices. Same reasoning as app_brand_name: a new untranslatable key rather than touching
+        locale files, which AGENTS.md forbids and Weblate would revert. The originals stay declared
+        so their translations do not become extra-translation lint errors.
+    -->
+    <string name="icon_name_variant_dark" translatable="false">Dark</string>
+    <string name="icon_name_variant_light" translatable="false">Light</string>
+    <string name="icon_name_variant_plate" translatable="false">Plate</string>
     <string name="icon_name_amoled">AMOLED Dark</string>
     <string name="icon_name_monochrome">Monochrome</string>
     <string name="icon_name_ghost">Ghost</string>
@@ -2411,4 +2437,87 @@
     <string name="fallback_your_watch_later_list">Your watch later list</string>
     <string name="fallback_downloaded_locally">Downloaded locally</string>
     <string name="fallback_more_results">More results</string>
+
+    <!-- === TubeHub: PeerTube =================================================================
+         Fork-only strings. Kept together at the end so that upstream Flow changes to this file
+         merge cleanly instead of interleaving with them. -->
+    <string name="settings_item_peertube">PeerTube instances</string>
+    <string name="settings_item_peertube_subtitle">Add servers whose videos appear in your feed</string>
+    <string name="peertube_instances_title">PeerTube instances</string>
+    <string name="peertube_instances_description">Videos from the instances you enable here are mixed into your home feed. Everything stays on your device — no account is required.</string>
+    <string name="peertube_instances_empty">No instances yet. Add one above to see PeerTube videos in your feed.</string>
+    <string name="peertube_instance_url_label">Instance address</string>
+    <string name="peertube_instance_url_placeholder">framatube.org</string>
+    <string name="peertube_instance_name_label">Name (optional)</string>
+    <string name="peertube_instance_name_hint">Leave empty to use the server address</string>
+    <string name="peertube_instance_add">Add instance</string>
+    <string name="peertube_instance_remove">Remove instance</string>
+    <string name="source_badge_youtube">From YouTube</string>
+    <string name="source_badge_peertube">From PeerTube</string>
+
+    <!-- Fediverse -->
+    <string name="fediverse_section_title">Fediverse account</string>
+    <string name="fediverse_section_description">Connect a Misskey account to like, boost and comment on PeerTube videos. Your access token stays encrypted on this device.</string>
+    <string name="fediverse_instance_label">Misskey instance</string>
+    <string name="fediverse_instance_placeholder">misskey.example</string>
+    <string name="fediverse_connect">Connect account</string>
+    <string name="fediverse_disconnect">Disconnect</string>
+    <string name="fediverse_no_account">No account connected.</string>
+    <string name="fediverse_connected_as">Connected as %1$s</string>
+    <string name="fediverse_acting_as">Acting as %1$s</string>
+    <string name="fediverse_action_like">Like</string>
+    <string name="fediverse_action_boost">Boost</string>
+    <string name="fediverse_action_comment">Send comment</string>
+    <string name="fediverse_action_with_count">%1$s · %2$d</string>
+    <string name="fediverse_comment_label">Write a comment</string>
+    <string name="fediverse_error_generic">The action could not be completed.</string>
+    <string name="fediverse_error_http">The instance returned an error (%1$d).</string>
+    <string name="fediverse_error_authorization_declined">Authorization was declined or has expired.</string>
+    <string name="fediverse_error_invalid_response">The instance sent an unexpected response.</string>
+    <string name="fediverse_error_unresolvable">This video is not known to your instance yet.</string>
+    <string name="fediverse_error_no_browser">No browser is available to complete sign-in.</string>
+
+    <string name="peertube_discovery_title">Global search</string>
+    <string name="peertube_discovery_description">Also search the whole PeerTube network through %1$s, not just your own instances. Your search terms are sent to that server.</string>
+    <string name="peertube_discovery_index_label">Search index</string>
+    <string name="peertube_discovery_index_hint">SepiaSearch is the best known index, but not the only one.</string>
+
+    <string name="channel_links_title">Channel links</string>
+    <string name="channel_links_subtitle">Pair a YouTube channel with the same creator on PeerTube</string>
+    <string name="channel_links_description">Link a YouTube channel to the same creator\'s PeerTube channel. TubeHub then points you at the decentralised copy — and, if you want, keeps both subscriptions together.</string>
+    <string name="channel_links_youtube_label">YouTube channel</string>
+    <string name="channel_links_youtube_filter">Filter your subscriptions</string>
+    <string name="channel_links_clear_selection">Pick a different channel</string>
+    <string name="channel_links_no_subscriptions">No subscribed channels yet. You can also open a channel and use “Link a PeerTube channel” there.</string>
+    <string name="channel_links_no_match">No subscription matches. Open the channel itself and use “Link a PeerTube channel” there.</string>
+    <string name="channel_links_peertube_label">PeerTube channel</string>
+    <string name="channel_links_peertube_hint">Search by name, or paste an address like https://framatube.org/c/name or name@framatube.org</string>
+    <string name="channel_links_search">Search</string>
+    <string name="channel_links_link">Link</string>
+    <string name="channel_links_link_pasted">Link %1$s</string>
+    <string name="channel_links_peertube_known">Channels you follow</string>
+    <string name="channel_links_no_results">Nothing found. Some instances only search their own content — pasting the channel address always works.</string>
+    <string name="channel_links_empty">No links yet.</string>
+    <string name="channel_links_pair">PeerTube: %1$s on %2$s</string>
+    <string name="channel_links_remove">Remove link</string>
+    <string name="channel_links_mirror_title">Keep subscriptions together</string>
+    <string name="channel_links_mirror_description">Subscribing to one channel of a linked pair subscribes the other too, and unsubscribing removes both.</string>
+    <string name="channel_link_also_on_peertube">Also on PeerTube</string>
+    <string name="channel_link_also_on_youtube">Also on YouTube</string>
+    <string name="channel_link_open">Open</string>
+    <string name="channel_link_add">Link a PeerTube channel</string>
+
+    <string name="linked_channel_both_sources">YouTube and PeerTube combined</string>
+    <string name="linked_channel_youtube_only">Watch on YouTube only</string>
+
+    <string name="peertube_channel_error">This channel could not be loaded.</string>
+    <string name="peertube_channel_instance">on %1$s</string>
+    <string name="peertube_channel_subscribers">%1$s subscribers</string>
+
+    <string name="channel_links_redirect_title">Open videos on PeerTube</string>
+    <string name="channel_links_redirect_description">When a linked channel has published the same video on PeerTube, that copy plays instead. While watching, the player settings let you switch a single video back.</string>
+    <string name="playback_source">Playback source</string>
+    <string name="streamed_on_template">Streamed %1$s</string>
+    <string name="video_source_peertube">PeerTube</string>
+    <string name="video_source_youtube">YouTube</string>
 </resources>

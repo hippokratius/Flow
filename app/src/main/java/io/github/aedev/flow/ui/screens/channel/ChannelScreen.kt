@@ -72,6 +72,7 @@ import io.github.aedev.flow.ui.components.ChannelBanner
 import io.github.aedev.flow.ui.components.CommentSortFilter
 import io.github.aedev.flow.ui.components.FlowCommentsBottomSheet
 import io.github.aedev.flow.ui.components.FullSizeImageDialog
+import io.github.aedev.flow.ui.components.LinkedChannelRow
 import io.github.aedev.flow.ui.components.VideoCardFullWidth
 import io.github.aedev.flow.ui.components.PlaylistCard
 import io.github.aedev.flow.ui.components.sortCommentsByFilter
@@ -94,6 +95,8 @@ fun ChannelScreen(
     onPlaylistClick: (String) -> Unit,
     onBackClick: () -> Unit,
     modifier: Modifier = Modifier,
+    // Opens the channel-links screen for this channel. Defaulted so existing callers are unaffected.
+    onLinkChannel: (channelId: String, channelName: String) -> Unit = { _, _ -> },
     viewModel: ChannelViewModel = viewModel()
 ) {
     val context = LocalContext.current
@@ -204,6 +207,12 @@ fun ChannelScreen(
                         onSubscribeClick = { viewModel.toggleSubscription() },
                         onUnsubscribeClick = { viewModel.unsubscribe() },
                         onNotificationChange = { viewModel.setNotificationState(it) },
+                        onLinkChannel = {
+                            onLinkChannel(
+                                uiState.channelId.orEmpty(),
+                                uiState.channelInfo?.name.orEmpty()
+                            )
+                        },
                         onTabSelected = { viewModel.selectTab(it) },
                         onSearchToggle = { viewModel.setSearchActive(!uiState.searchActive) },
                         onSearchQueryChange = { viewModel.searchInChannel(it) },
@@ -279,7 +288,8 @@ private fun ChannelContent(
     initialScrollIndex: Int = 0,
     initialScrollOffset: Int = 0,
     onScrollChanged: (index: Int, offset: Int) -> Unit = { _, _ -> },
-    onCollapsedTitleVisibilityChange: (Boolean) -> Unit = {}
+    onCollapsedTitleVisibilityChange: (Boolean) -> Unit = {},
+    onLinkChannel: () -> Unit = {}
 ) {
     val channelInfo = uiState.channelInfo ?: return
 
@@ -629,12 +639,17 @@ private fun ChannelContent(
             ) {
                 ChannelHeader(
                     channelInfo = channelInfo,
+                    channelId = uiState.channelId.orEmpty(),
                     channelVideoCountText = uiState.channelVideoCountText,
                     isSubscribed = uiState.isSubscribed,
                     isNotificationsEnabled = uiState.isNotificationsEnabled,
                     onSubscribeClick = onSubscribeClick,
                     onUnsubscribeClick = onUnsubscribeClick,
-                    onNotificationChange = onNotificationChange
+                    onNotificationChange = onNotificationChange,
+                    // navigateToYoutubeChannel already dispatches a federated id to its own page,
+                    // so the existing callback carries the link target unchanged.
+                    onOpenLinkedChannel = onChannelClick,
+                    onLinkChannel = onLinkChannel
                 )
             }
 
@@ -775,12 +790,15 @@ private fun FilterAndToggleBar(
 @Composable
 private fun ChannelHeader(
     channelInfo: org.schabi.newpipe.extractor.channel.ChannelInfo,
+    channelId: String,
     channelVideoCountText: String?,
     isSubscribed: Boolean,
     isNotificationsEnabled: Boolean,
     onSubscribeClick: () -> Unit,
     onUnsubscribeClick: () -> Unit,
-    onNotificationChange: (Boolean) -> Unit
+    onNotificationChange: (Boolean) -> Unit,
+    onOpenLinkedChannel: (String) -> Unit,
+    onLinkChannel: () -> Unit
 ) {
     val bannerUrl = try {
         val rawBanner = channelInfo.banners.maxByOrNull { it.width }?.url
@@ -927,6 +945,18 @@ private fun ChannelHeader(
                     )
                 }
             }
+        }
+
+        // Renders nothing unless this channel has a PeerTube counterpart.
+        LinkedChannelRow(
+            channelId = channelId,
+            onOpenLinkedChannel = onOpenLinkedChannel
+        )
+        TextButton(
+            onClick = onLinkChannel,
+            modifier = Modifier.padding(horizontal = 12.dp)
+        ) {
+            Text(stringResource(R.string.channel_link_add))
         }
     }
 }

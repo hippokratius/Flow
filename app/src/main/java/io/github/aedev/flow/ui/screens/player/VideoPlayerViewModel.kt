@@ -5,6 +5,7 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import io.github.aedev.flow.data.local.*
+import io.github.aedev.flow.data.model.Channel
 import io.github.aedev.flow.data.model.Video
 import io.github.aedev.flow.data.model.Comment
 import io.github.aedev.flow.data.model.distinctByNonBlankKey
@@ -14,6 +15,8 @@ import io.github.aedev.flow.data.recommendation.FlowNeuroEngine
 import io.github.aedev.flow.ui.components.FeedInvalidationBus
 import io.github.aedev.flow.data.recommendation.InteractionType
 import io.github.aedev.flow.data.repository.YouTubeRepository
+import io.github.aedev.flow.data.source.SourceKind
+import io.github.aedev.flow.data.source.contentId
 import io.github.aedev.flow.player.BackgroundPlaybackPolicy
 import io.github.aedev.flow.player.EnhancedPlayerManager
 import io.github.aedev.flow.player.EnhancedMusicPlayerManager
@@ -89,7 +92,10 @@ class VideoPlayerViewModel @Inject constructor(
     private val playerPreferences: PlayerPreferences,
     private val videoDownloadManager: VideoDownloadManager,
     private val sponsorBlockRepository: SponsorBlockRepository,
-    private val liveChatRepository: io.github.aedev.flow.data.repository.LiveChatRepository
+    private val liveChatRepository: io.github.aedev.flow.data.repository.LiveChatRepository,
+    private val externalSourcePlaybackLoader: io.github.aedev.flow.player.source.ExternalSourcePlaybackLoader,
+    private val contentSourceRegistry: io.github.aedev.flow.data.source.ContentSourceRegistry,
+    private val channelLinkStore: io.github.aedev.flow.data.source.link.ChannelLinkStore
 ) : ViewModel() {
     
     private val _uiState = MutableStateFlow(VideoPlayerUiState())
@@ -140,10 +146,65 @@ class VideoPlayerViewModel @Inject constructor(
         const val LIVE_CHAT_MIN_DRIP_MS = 90L
         const val LIVE_CHAT_MAX_DRIP_MS = 250L
         const val SECONDARY_CONTENT_STARTUP_TIMEOUT_MS = 20_000L
+
+        /**
+         * How long a tap may wait for the PeerTube counterpart before the tapped video wins.
+         *
+         * Only linked channels ever wait, and the alternative to waiting is starting the wrong video
+         * — but a tap that does nothing visible is its own kind of broken, so the ceiling is short
+         * enough to stay inside "it took a moment".
+         */
+        const val REDIRECT_RESOLVE_TIMEOUT_MS = 2_500L
+        const val CHANNEL_UPLOADS_CACHE_TTL_MS = 5 * 60_000L
     }
 
     private val _canGoPrevious = MutableStateFlow(false)
     val canGoPrevious: StateFlow<Boolean> = _canGoPrevious.asStateFlow()
+
+    /*
+     * Cross-platform channel links, kept as a snapshot rather than read per tap.
+     *
+     * `playVideoPreferringPeerTube` has to decide *before* playback starts whether it is going
+     * anywhere else, and a DataStore read there would delay every video — including the large
+     * majority whose channel has no link at all. Collected once, answered from memory.
+     */
+    private val channelLinks: StateFlow<List<io.github.aedev.flow.data.source.link.ChannelLink>> =
+        channelLinkStore.links
+            .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    private val redirectPlaybackEnabled: StateFlow<Boolean> = channelLinkStore.redirectPlayback
+        .stateIn(viewModelScope, SharingStarted.Eagerly, true)
+
+    /**
+     * Videos the user sent back to YouTube by hand.
+     *
+     * Session-scoped on purpose: the button is a correction for the video in front of you, not a
+     * preference worth persisting and growing forever. The permanent form of "stay on YouTube" is
+     * the switch in the channel links screen.
+     */
+    private val optedOutOfRedirect = mutableSetOf<String>()
+
+    /** Channel id to (fetched at, uploads). See [channelUploadsCached]. */
+    private val channelUploadsCache =
+        java.util.concurrent.ConcurrentHashMap<String, Pair<Long, List<Video>>>()
+
+    /**
+     * The same upload on the other platform, for the video currently playing.
+     *
+     * Drives the source tab. Resolved in the background and allowed to fail: a missing counterpart
+     * simply means no tab, which is also the state of every video whose channel is not linked.
+     *
+     * Declared above `init` because the collector there runs on `Dispatchers.Main.immediate` and can
+     * therefore reach [resolveCounterpart] while the constructor is still running.
+     */
+    private val _counterpartVideo = MutableStateFlow<Video?>(null)
+    val counterpartVideo: StateFlow<Video?> = _counterpartVideo.asStateFlow()
+
+    private var counterpartJob: Job? = null
+    private var counterpartForVideoId: String? = null
+
+    /** Everything loaded for the counterpart while the source switch points at it. */
+    private var infoSideJob: Job? = null
 
     private val _expandPlayerRequest = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     val expandPlayerRequest: SharedFlow<Unit> = _expandPlayerRequest.asSharedFlow()
@@ -507,6 +568,134 @@ class VideoPlayerViewModel @Inject constructor(
                 _uiState.update { it.copy(isUpcomingReminderSet = isReminderSet) }
             }
         }
+
+        // Is the same upload available on the other platform? Answered per played video.
+        //
+        // Filtered on the fields the answer depends on, not on the id alone. A video reached by id
+        // — from a channel page, a deep link, a notification — arrives as a placeholder with no
+        // title and no duration, so the first attempt gives up; the metadata that lands afterwards
+        // keeps the same id, and an id-only filter swallowed exactly the emission worth reacting to.
+        //
+        // Combined with the links so a video started before the store had loaded — or while the
+        // user was linking its channel — still gets its switch.
+        viewModelScope.launch {
+            combine(
+                uiState.map { it.cachedVideo }.distinctUntilChanged { old, new ->
+                    old?.id == new?.id &&
+                        old?.title == new?.title &&
+                        old?.duration == new?.duration &&
+                        old?.channelId == new?.channelId
+                },
+                channelLinks
+            ) { video, _ -> video }
+                .collect { video -> resolveCounterpart(video) }
+        }
+    }
+
+    private fun resolveCounterpart(video: Video?) {
+        // Already answered for this video. Re-running would blank the tab — and with it the source
+        // the user has selected — for a link list that merely re-emitted.
+        if (video != null && counterpartForVideoId == video.id && _counterpartVideo.value != null) {
+            return
+        }
+        counterpartJob?.cancel()
+        // The old counterpart's subscription and like collectors have nothing left to describe.
+        infoSideJob?.cancel()
+        counterpartForVideoId = video?.id
+        _counterpartVideo.value = null
+        if (_uiState.value.infoVideo != null) {
+            _uiState.update {
+                it.copy(infoVideo = null, infoChannel = null, infoLikeState = null)
+            }
+        }
+        if (video == null || video.title.isBlank() || video.duration <= 0) return
+        if (video.channelId.isBlank()) return
+
+        val counterpartChannelId =
+            io.github.aedev.flow.data.source.link.ChannelLinks.counterpart(
+                channelLinks.value,
+                video.channelId,
+            ) ?: return
+
+        counterpartJob = viewModelScope.launch {
+            val found = counterpartIn(counterpartChannelId, video) ?: return@launch
+            if (_uiState.value.cachedVideo?.id != video.id) return@launch
+            _counterpartVideo.value = found
+        }
+    }
+
+    /**
+     * Shows the metadata of [videoId] — either the playing video or its counterpart.
+     *
+     * Everything the info panel renders below the title follows this: views, date, description,
+     * channel with its follower count, like counts, comments. Reloads rather than keeping both sides
+     * in memory — one source at a time, which is far less new state in the most tangled ViewModel in
+     * the app and, for the user, indistinguishable.
+     *
+     * Playback does not move. That is chosen separately, in the player's settings menu.
+     */
+    fun showInfoFor(videoId: String) {
+        val playing = _uiState.value.cachedVideo ?: return
+        infoSideJob?.cancel()
+
+        if (videoId == playing.id) {
+            _uiState.update { it.copy(infoVideo = null, infoChannel = null, infoLikeState = null) }
+            loadComments(playing.id)
+            return
+        }
+
+        val counterpart = _counterpartVideo.value?.takeIf { it.id == videoId } ?: return
+        // Shown immediately from what the pairing already knows; the rest arrives below.
+        _uiState.update {
+            it.copy(infoVideo = counterpart, infoChannel = null, infoLikeState = null)
+        }
+        loadComments(counterpart.id)
+
+        infoSideJob = viewModelScope.launch {
+            // The list endpoints truncate descriptions; the detail one does not.
+            launch {
+                val id = counterpart.id.contentId
+                val full = contentSourceRegistry.forId(id)
+                    ?.let { source -> runCatching { source.video(id) }.getOrNull() }
+                if (full != null && _uiState.value.infoVideo?.id == counterpart.id) {
+                    _uiState.update { it.copy(infoVideo = full) }
+                }
+            }
+            // The follower count lives on the channel, not on the video. YouTube answers null here
+            // — no count is better than the playing channel's count under a different name.
+            launch {
+                val channelId = counterpart.channelId.contentId
+                val channel = contentSourceRegistry.forId(channelId)
+                    ?.let { source -> runCatching { source.channel(channelId) }.getOrNull() }
+                if (channel != null && _uiState.value.infoVideo?.id == counterpart.id) {
+                    _uiState.update { it.copy(infoChannel = channel) }
+                }
+            }
+            // Subscribe and like must read the shown side, or the buttons would report the state of
+            // a channel and a video the user is not looking at.
+            launch {
+                subscriptionRepository.isSubscribed(counterpart.channelId).collect { subscribed ->
+                    _uiState.update { it.copy(infoSubscribed = subscribed) }
+                }
+            }
+            launch {
+                likedVideosRepository.getLikeState(counterpart.id).collect { state ->
+                    _uiState.update { it.copy(infoLikeState = state) }
+                }
+            }
+        }
+    }
+
+    /**
+     * Plays the other copy of this upload, from the player's settings menu.
+     *
+     * The choice is remembered for the video started this way, so the automatic redirect does not
+     * overrule it the next time the same video is tapped.
+     */
+    fun switchPlaybackSource() {
+        val target = _counterpartVideo.value ?: return
+        optedOutOfRedirect.add(target.id)
+        playVideo(target)
     }
     
     fun initializeViewHistory(context: Context) {
@@ -801,7 +990,11 @@ class VideoPlayerViewModel @Inject constructor(
             isSubscribed = false,
             likeState = null,
             isUpcoming = false,
-            upcomingReleaseTimeMs = null
+            upcomingReleaseTimeMs = null,
+            // A new video is shown from its own side until the user says otherwise.
+            infoVideo = null,
+            infoChannel = null,
+            infoLikeState = null
         )
         GlobalPlayerState.setCurrentVideo(video)
         GlobalPlayerState.setExplicitBackgroundPlaybackActive(false)
@@ -817,6 +1010,68 @@ class VideoPlayerViewModel @Inject constructor(
         }
         // Start loading streams
         loadVideoInfo(video.id, isWifi = detectIsWifi(), forceRefresh = true)
+    }
+
+    /**
+     * Plays [video], or the same upload on PeerTube when the user has linked the two channels.
+     *
+     * The counterpart is resolved *before* [playVideo] rather than swapped in afterwards. Everything
+     * downstream of that call — watch history, the queue, the media notification, comments — keys off
+     * the video it was handed, so starting on YouTube and correcting course would leave the app
+     * playing one video while every record points at another.
+     *
+     * The cost of that ordering is that a linked channel waits for one request before playback
+     * starts. Nothing else does: [peerTubeCounterpartChannelId] answers from the in-memory link
+     * snapshot, so an unlinked video goes straight through, synchronously, exactly as before.
+     */
+    fun playVideoPreferringPeerTube(video: Video) {
+        val peerTubeChannelId = io.github.aedev.flow.data.source.link.peerTubeCounterpartChannelId(
+            video = video,
+            links = channelLinks.value,
+            redirectEnabled = redirectPlaybackEnabled.value,
+            optedOutVideoIds = optedOutOfRedirect,
+        )
+        if (peerTubeChannelId == null) {
+            playVideo(video)
+            return
+        }
+
+        viewModelScope.launch {
+            val counterpart = withTimeoutOrNull(REDIRECT_RESOLVE_TIMEOUT_MS) {
+                counterpartIn(peerTubeChannelId, video)
+            }
+            // No match, instance unreachable, or too slow — the tapped video plays as tapped. The
+            // redirect is not announced separately: the source switch under the title names the
+            // side that is playing, and the settings menu is where the other one is chosen.
+            playVideo(counterpart ?: video)
+        }
+    }
+
+    /** The same upload as [video] among [channelId]'s uploads, or null. */
+    private suspend fun counterpartIn(channelId: String, video: Video): Video? {
+        val uploads = channelUploadsCached(channelId)
+        return io.github.aedev.flow.data.source.link.findCounterpart(video, uploads)
+    }
+
+    /**
+     * A channel's recent uploads, briefly cached.
+     *
+     * Watching a linked channel means tapping several of its videos in a row, and each tap would
+     * otherwise re-fetch the same page before playback could start. The TTL is what keeps a video
+     * uploaded minutes ago from staying invisible to the pairing for the rest of the session.
+     */
+    private suspend fun channelUploadsCached(channelId: String): List<Video> {
+        val now = System.currentTimeMillis()
+        channelUploadsCache[channelId]?.let { (fetchedAt, videos) ->
+            if (now - fetchedAt < CHANNEL_UPLOADS_CACHE_TTL_MS) return videos
+        }
+        val id = channelId.contentId
+        val source = contentSourceRegistry.forId(id) ?: return emptyList()
+        val videos = runCatching { source.channelUploads(id).items }
+            .onFailure { Log.d("VideoPlayerViewModel", "Channel uploads for $channelId failed", it) }
+            .getOrDefault(emptyList())
+        if (videos.isNotEmpty()) channelUploadsCache[channelId] = now to videos
+        return videos
     }
 
     fun playLocalVideo(video: Video, contentUri: String) {
@@ -854,7 +1109,10 @@ class VideoPlayerViewModel @Inject constructor(
             upcomingReleaseTimeMs = null,
             localFilePath = contentUri,
             localFileVideoId = video.id,
-            offlineSponsorBlockSegments = null
+            offlineSponsorBlockSegments = null,
+            infoVideo = null,
+            infoChannel = null,
+            infoLikeState = null
         )
         GlobalPlayerState.setCurrentVideo(video)
         GlobalPlayerState.setExplicitBackgroundPlaybackActive(false)
@@ -1042,7 +1300,10 @@ class VideoPlayerViewModel @Inject constructor(
                 likeState = null,
                 queueTitle = title,
                 isUpcoming = false,
-                upcomingReleaseTimeMs = null
+                upcomingReleaseTimeMs = null,
+                infoVideo = null,
+                infoChannel = null,
+                infoLikeState = null
             )
         }
         saveHistoryEntry(startVideo)
@@ -1062,8 +1323,9 @@ class VideoPlayerViewModel @Inject constructor(
         val handledByPlayer = EnhancedPlayerManager.getInstance().playNext(loadStreamsInPlayer = false)
         if (!handledByPlayer) {
             _uiState.value.relatedVideos.firstOrNull()?.let { nextVideo ->
-                playVideo(nextVideo)
-                io.github.aedev.flow.player.GlobalPlayerState.setCurrentVideo(nextVideo)
+                // Autoplay follows the same rule as a tap; setCurrentVideo is left to playVideo,
+                // which knows which version actually started.
+                playVideoPreferringPeerTube(nextVideo)
             }
         }
     }
@@ -1113,6 +1375,13 @@ class VideoPlayerViewModel @Inject constructor(
     ) {
         if (isLocalMediaId(videoId)) {
             Log.d("VideoPlayerViewModel", "loadVideoInfo: $videoId is a local file — skipping all network loading")
+            return
+        }
+        // Content from a federated source resolves through its own ContentSource; none of the
+        // InnerTube/NewPipe/PoToken/SABR machinery below applies to it.
+        val contentId = videoId.contentId
+        if (contentId.kind == SourceKind.PEERTUBE) {
+            loadExternalSourceVideo(contentId, resumePositionOverrideMs ?: 0L)
             return
         }
         val currentState = _uiState.value
@@ -2577,6 +2846,124 @@ class VideoPlayerViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Playback for a federated source (currently PeerTube).
+     *
+     * Everything the YouTube path needs — cipher solving, PoToken attestation, the InnerTube versus
+     * NewPipe race — is irrelevant here: the source hands back a ready stream URL. Resolution and
+     * player hand-off live in [io.github.aedev.flow.player.source.ExternalSourcePlaybackLoader] so
+     * this file stays close to upstream.
+     */
+    private fun loadExternalSourceVideo(
+        contentId: io.github.aedev.flow.data.source.ContentId,
+        resumePositionMs: Long,
+    ) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true, error = null, errorHint = null) }
+
+            // Nobody else will. YouTube videos reached by id are filled in by the NewPipe
+            // extraction; a federated one arrives as the bare placeholder that the `player/{id}`
+            // route builds and stays that way — no title, no channel, zero views — because this
+            // function used to do nothing but start the stream.
+            launch { enrichExternalSourceVideo(contentId) }
+
+            val spec = externalSourcePlaybackLoader.start(context, contentId, resumePositionMs)
+            if (spec == null) {
+                _uiState.update {
+                    it.copy(
+                        isLoading = false,
+                        error = context.getString(R.string.error_all_stream_sources_failed),
+                        errorHint = context.getString(R.string.error_playback_retry_hint)
+                    )
+                }
+                return@launch
+            }
+
+            _uiState.update { it.copy(isLoading = false, error = null, errorHint = null) }
+            applyRememberedPlaybackSpeed(isLive = spec.isLive, manager = EnhancedPlayerManager.getInstance())
+        }
+    }
+
+    /**
+     * Fills in what the player knows about a federated video.
+     *
+     * Mirrors the YouTube enrichment further up: only blank fields are replaced, so a video opened
+     * from a feed — which already carries everything — is left alone, and one opened by id gets its
+     * title, channel, runtime and view count. The runtime matters beyond the display: without it the
+     * pairing cannot even try, so the source switch depended on this too.
+     */
+    private suspend fun enrichExternalSourceVideo(contentId: io.github.aedev.flow.data.source.ContentId) {
+        val videoId = contentId.raw
+        val cached = _uiState.value.cachedVideo?.takeIf { it.id == videoId } ?: return
+        val alreadyComplete =
+            cached.title.isNotBlank() && cached.duration > 0 && cached.channelId.isNotBlank()
+
+        val fetched = if (alreadyComplete) {
+            null
+        } else {
+            contentSourceRegistry.forId(contentId)
+                ?.let { source -> runCatching { source.video(contentId) }.getOrNull() }
+        }
+
+        if (fetched != null) withContext(Dispatchers.Main) {
+            val current = _uiState.value.cachedVideo?.takeIf { it.id == videoId } ?: return@withContext
+            val enriched = current.copy(
+                title = current.title.ifBlank { fetched.title },
+                channelName = current.channelName.ifBlank { fetched.channelName },
+                channelId = current.channelId.ifBlank { fetched.channelId },
+                channelThumbnailUrl = current.channelThumbnailUrl.ifBlank { fetched.channelThumbnailUrl },
+                thumbnailUrl = current.thumbnailUrl.ifBlank { fetched.thumbnailUrl },
+                duration = current.duration.takeIf { it > 0 } ?: fetched.duration,
+                viewCount = current.viewCount.takeIf { it > 0L } ?: fetched.viewCount,
+                description = current.description.ifBlank { fetched.description },
+                timestamp = current.timestamp.takeIf { it > 0L } ?: fetched.timestamp,
+                uploadDate = current.uploadDate.ifBlank { fetched.uploadDate },
+                source = fetched.source,
+                instanceHost = current.instanceHost ?: fetched.instanceHost,
+            )
+            if (enriched == current) return@withContext
+            GlobalPlayerState.setCurrentVideo(enriched)
+            _uiState.update { it.copy(cachedVideo = enriched) }
+            saveHistoryEntry(enriched)
+        }
+
+        enrichExternalSourceChannel(_uiState.value.cachedVideo?.takeIf { it.id == videoId })
+    }
+
+    /**
+     * The follower count and avatar of a federated video's channel.
+     *
+     * Both live on the channel, not on the video, and the existing channel-metadata path is a
+     * NewPipe lookup that finds nothing for a `peertube_…` id. Without this the panel showed a
+     * follower count for the *counterpart* — which does load its channel — and none for the side
+     * that was actually playing.
+     */
+    private suspend fun enrichExternalSourceChannel(video: Video?) {
+        val channelId = video?.channelId?.takeIf { it.isNotBlank() } ?: return
+        if (_uiState.value.channelSubscriberCount != null &&
+            !_uiState.value.channelAvatarUrl.isNullOrBlank()
+        ) {
+            return
+        }
+
+        val id = channelId.contentId
+        val channel = contentSourceRegistry.forId(id)
+            ?.let { source -> runCatching { source.channel(id) }.getOrNull() }
+            ?: return
+
+        withContext(Dispatchers.Main) {
+            if (_uiState.value.cachedVideo?.id != video.id) return@withContext
+            _uiState.update { state ->
+                state.copy(
+                    channelSubscriberCount = state.channelSubscriberCount
+                        ?: channel.subscriberCount.takeIf { it > 0L },
+                    channelAvatarUrl = state.channelAvatarUrl?.takeIf { it.isNotBlank() }
+                        ?: channel.thumbnailUrl.takeIf { it.isNotBlank() },
+                )
+            }
+        }
+    }
+
     private suspend fun prepareLocalMediaForPlayback(
         videoId: String,
         localFilePath: String,
@@ -2684,8 +3071,14 @@ class VideoPlayerViewModel @Inject constructor(
                 videoId     = video.id,
                 duration    = if (video.duration > 0) video.duration * 1000L else 0L,
                 title       = video.title,
+                // Only guess a YouTube thumbnail URL for YouTube videos; for any other source that
+                // guess is a permanently broken link written into the watch history.
                 thumbnailUrl = video.thumbnailUrl.takeIf { it.isNotEmpty() }
-                    ?: "https://i.ytimg.com/vi/${video.id}/hq720.jpg",
+                    ?: if (video.id.contentId.kind == SourceKind.YOUTUBE) {
+                        "https://i.ytimg.com/vi/${video.id}/hq720.jpg"
+                    } else {
+                        ""
+                    },
                 channelName = video.channelName,
                 channelId   = video.channelId,
                 isShort     = video.isShort
@@ -2802,7 +3195,6 @@ class VideoPlayerViewModel @Inject constructor(
             val isSubscribed = subscriptionRepository.isSubscribed(channelId).first()
             if (isSubscribed) {
                 subscriptionRepository.unsubscribe(channelId)
-                _uiState.value = _uiState.value.copy(isSubscribed = false)
             } else {
                 subscriptionRepository.subscribe(
                     ChannelSubscription(
@@ -2811,11 +3203,24 @@ class VideoPlayerViewModel @Inject constructor(
                         channelThumbnail = channelThumbnail
                     )
                 )
-                _uiState.value = _uiState.value.copy(isSubscribed = true)
             }
+            applySubscribedFor(channelId, !isSubscribed)
         }
     }
     
+    /**
+     * Same reasoning as [applyLikeStateFor]: the subscribe button acts on the channel that is on
+     * screen, which the source switch may have changed to the counterpart's.
+     */
+    private fun applySubscribedFor(channelId: String, subscribed: Boolean) {
+        _uiState.update {
+            when (channelId) {
+                it.infoVideo?.channelId -> it.copy(infoSubscribed = subscribed)
+                else -> it.copy(isSubscribed = subscribed)
+            }
+        }
+    }
+
     fun setNotificationEnabled(channelId: String, enabled: Boolean) {
         viewModelScope.launch {
             subscriptionRepository.updateNotificationState(channelId, enabled)
@@ -2854,7 +3259,7 @@ class VideoPlayerViewModel @Inject constructor(
                     channelName = channelName
                 )
             )
-            _uiState.value = _uiState.value.copy(likeState = "LIKED")
+            applyLikeStateFor(videoId, "LIKED")
             try {
                 val video = resolveRichVideo(videoId) ?: Video(
                     id = videoId,
@@ -2874,7 +3279,7 @@ class VideoPlayerViewModel @Inject constructor(
     fun dislikeVideo(videoId: String) {
         viewModelScope.launch {
             likedVideosRepository.dislikeVideo(videoId)
-            _uiState.value = _uiState.value.copy(likeState = "DISLIKED")
+            applyLikeStateFor(videoId, "DISLIKED")
             try {
                 val video = resolveRichVideo(videoId)
                 if (video != null) {
@@ -2889,7 +3294,25 @@ class VideoPlayerViewModel @Inject constructor(
     fun removeLikeState(videoId: String) {
         viewModelScope.launch {
             likedVideosRepository.removeLikeState(videoId)
-            _uiState.value = _uiState.value.copy(likeState = null)
+            applyLikeStateFor(videoId, null)
+        }
+    }
+
+    /**
+     * Writes the like state onto the side it belongs to.
+     *
+     * The like button acts on whichever copy the source switch is showing, so the optimistic update
+     * has to land on the matching field. Writing `likeState` unconditionally would have shown the
+     * counterpart's like on the playing video, and nothing would have corrected it: the playing
+     * video's own collector only fires when *its* row changes.
+     */
+    private fun applyLikeStateFor(videoId: String, state: String?) {
+        _uiState.update {
+            when (videoId) {
+                it.infoVideo?.id -> it.copy(infoLikeState = state)
+                it.cachedVideo?.id -> it.copy(likeState = state)
+                else -> it
+            }
         }
     }
     
@@ -2958,6 +3381,16 @@ class VideoPlayerViewModel @Inject constructor(
         EnhancedPlayerManager.getInstance().toggleLoop(enabled)
     }
 
+    /**
+     * The video the comment list is meant to be showing.
+     *
+     * Normally the one playing. While the source tab points at the counterpart it is that video
+     * instead — otherwise the stale-result guards in [loadComments] would discard the very comments
+     * the tab just asked for, since they belong to a video that is not playing.
+     */
+    private fun commentsTargetVideoId(): String? =
+        _uiState.value.infoVideo?.id ?: _uiState.value.cachedVideo?.id
+
     fun loadComments(videoId: String) {
         if (isLocalMediaId(videoId)) {
             _commentsState.value = emptyList()
@@ -2980,9 +3413,17 @@ class VideoPlayerViewModel @Inject constructor(
                         )
                     }
                 }
-                if (_uiState.value.cachedVideo?.id != videoId) return@launch
-                val (comments, nextPage) = repository.getComments(videoId)
-                if (_uiState.value.cachedVideo?.id != videoId) return@launch
+                if (commentsTargetVideoId() != videoId) return@launch
+                // A federated video's comments live on its instance. Before this, the YouTube
+                // extractor was handed a `peertube_…` id, failed, and the video simply had no
+                // comments — with the failure only in the log.
+                val federatedId = videoId.contentId.takeIf { it.kind == SourceKind.PEERTUBE }
+                val (comments, nextPage) = if (federatedId != null) {
+                    contentSourceRegistry.forId(federatedId)?.comments(federatedId).orEmpty() to null
+                } else {
+                    repository.getComments(videoId)
+                }
+                if (commentsTargetVideoId() != videoId) return@launch
                 _commentsState.value = comments.distinctByNonBlankKey(Comment::id)
                 commentsNextPage = nextPage
                 _hasMoreComments.value = nextPage != null
@@ -2997,10 +3438,13 @@ class VideoPlayerViewModel @Inject constructor(
     fun loadMoreComments(videoId: String) {
         val nextPage = commentsNextPage ?: return
         if (_isLoadingMoreComments.value) return
+        // Callers pass the playing video's id. While the source tab shows the counterpart, the
+        // comment list on screen is that video's, and so is the page token.
+        val targetId = _uiState.value.infoVideo?.id ?: videoId
         viewModelScope.launch {
             _isLoadingMoreComments.value = true
             try {
-                val (newComments, newNextPage) = repository.getMoreComments(videoId, nextPage)
+                val (newComments, newNextPage) = repository.getMoreComments(targetId, nextPage)
                 _commentsState.value = _commentsState.value.mergeDistinctByNonBlankKey(
                     newComments,
                     Comment::id
@@ -3302,7 +3746,20 @@ data class VideoPlayerUiState(
     val isLive: Boolean = false,
     val isLiveChatAvailable: Boolean = false,
     val liveChatMessages: List<io.github.aedev.flow.data.model.LiveChatMessage> = emptyList(),
-    val isLiveChatLoading: Boolean = false
+    val isLiveChatLoading: Boolean = false,
+    /**
+     * The counterpart whose metadata the source switch is showing.
+     *
+     * Null — the normal case — means the playing video's own. Never changes what plays; sharing,
+     * downloading and the watch history all stay on [cachedVideo].
+     */
+    val infoVideo: Video? = null,
+    /** The counterpart's channel, for its follower count. Null while loading or for YouTube. */
+    val infoChannel: Channel? = null,
+    /** Subscription state of the counterpart's channel, so the button matches what is on screen. */
+    val infoSubscribed: Boolean = false,
+    /** Like state of the counterpart, same reason. */
+    val infoLikeState: String? = null
 )
 
 data class SubtitleInfo(

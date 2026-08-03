@@ -1,5 +1,7 @@
 package io.github.aedev.flow.innertube.models.response
 
+import io.github.aedev.flow.utils.isLiveViewerText
+
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -121,7 +123,7 @@ data class WatchMetadataResponse(
                 .orEmpty()
             val metadataTexts = metadataParts.mapNotNull { it.text?.content?.takeIf { text -> text.isNotBlank() } }
             val live = contentImage?.thumbnailViewModel?.hasLiveBadge() == true ||
-                metadataTexts.any { it.contains("watching", ignoreCase = true) || it.contains("viewer", ignoreCase = true) }
+                metadataTexts.any { it.isLiveViewerText() }
             val byline = metadataTexts.firstOrNull { text ->
                 !text.looksLikeViewCount() &&
                     !text.looksLikeDateOrDuration() &&
@@ -142,12 +144,13 @@ data class WatchMetadataResponse(
             )
         }
 
+        // "views" / "Aufrufe" and their live counterparts. InnerTube answers in the user's
+        // language, so an English-only list left non-English metadata unrecognised.
         private fun String.looksLikeViewCount(): Boolean {
             val lower = lowercase()
             return lower.contains("view") ||
-                lower.contains("watching") ||
-                lower.contains("viewer") ||
-                lower.contains("no views")
+                lower.contains("aufruf") ||
+                isLiveViewerText()
         }
 
         private fun String.looksLikeDateOrDuration(): Boolean {

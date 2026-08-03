@@ -4,6 +4,7 @@ import android.util.Log
 import io.github.aedev.flow.data.model.Video
 import io.github.aedev.flow.utils.ThumbnailUrlResolver
 import io.github.aedev.flow.utils.formatYouTubeRelativeTime
+import io.github.aedev.flow.utils.hasStreamedPrefix
 import io.github.aedev.flow.utils.parsePremiereTimestamp
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.Flow
@@ -444,9 +445,9 @@ object RssSubscriptionService {
         val uploadDateStr = when {
             isUpcoming && rawDate != null && !rawDate.contains("T") && !rawDate.contains("+") -> rawDate
             uploadTimeMillis > 0L -> formatRelativeTime(uploadTimeMillis)
-                .let { if (isArchivedLivestream) "Streamed $it" else it }
+                .let { if (isArchivedLivestream) streamedPrefix(it) else it }
             rawDate != null && !rawDate.contains("T") && !rawDate.contains("+") ->
-                if (isArchivedLivestream && !rawDate.startsWith("Streamed", ignoreCase = true)) "Streamed $rawDate" else rawDate
+                if (isArchivedLivestream && !rawDate.hasStreamedPrefix()) streamedPrefix(rawDate) else rawDate
             else -> ""
         }
 
@@ -483,6 +484,14 @@ object RssSubscriptionService {
     private fun formatRelativeTime(timestampMillis: Long): String {
         return formatYouTubeRelativeTime(timestampMillis)
     }
+
+    /**
+     * The word stays English here: this is an `object` with no Context, so no string resource is
+     * reachable. The date beside it comes from ICU and is already localised, which is why the two
+     * have never matched. Fixing that properly means threading a Context through this service —
+     * worth doing, but not while the point is the extractor language.
+     */
+    private fun streamedPrefix(date: String): String = "Streamed $date"
 
     private fun extractVideoId(url: String): String {
         return when {
@@ -530,30 +539,7 @@ object RssSubscriptionService {
         ).any { marker -> restrictionText.contains(marker) }
     }
 
-    private fun parseRelativeUploadDate(text: String): Long? {
-        val normalized = text.lowercase(Locale.US)
-            .replace("streamed", "")
-            .replace("premiered", "")
-            .replace("live", "")
-            .replace("ago", "")
-            .trim()
-
-        if (normalized.isBlank()) return null
-        if (normalized.contains("just now") || normalized.contains("today")) return System.currentTimeMillis()
-        if (normalized.contains("yesterday")) return System.currentTimeMillis() - 24L * 60L * 60L * 1000L
-
-        val value = Regex("(\\d+)").find(normalized)?.groupValues?.getOrNull(1)?.toLongOrNull() ?: return null
-        val unitMillis = when {
-            normalized.contains("second") || normalized.endsWith("s") -> 1_000L
-            normalized.contains("minute") || normalized.endsWith("m") -> 60_000L
-            normalized.contains("hour") || normalized.endsWith("h") -> 3_600_000L
-            normalized.contains("day") || normalized.endsWith("d") -> 86_400_000L
-            normalized.contains("week") || normalized.endsWith("w") -> 7L * 86_400_000L
-            normalized.contains("month") || normalized.endsWith("mo") -> 30L * 86_400_000L
-            normalized.contains("year") || normalized.endsWith("y") -> 365L * 86_400_000L
-            else -> return null
-        }
-
-        return System.currentTimeMillis() - (value * unitMillis)
-    }
+    /** The second copy of this parser. Both now share one bilingual implementation. */
+    private fun parseRelativeUploadDate(text: String): Long? =
+        io.github.aedev.flow.utils.parseRelativeUploadDateMillis(text)
 }

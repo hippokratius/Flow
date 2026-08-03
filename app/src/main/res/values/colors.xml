@@ -15,5 +15,12 @@
     <color name="icon_bg_flow_play">#FFFFFF</color>
     <color name="icon_bg_material_sky">#D7E3FF</color>
     <color name="icon_bg_material_mint">#C7E8D4</color>
+
+    <!--
+        Plate behind the launcher glyph. The shared foreground drawable sits on backgrounds ranging
+        from #0F0F0F to #FFFFFF, so it cannot rely on the background for contrast and carries its
+        own plate. Deliberately not red: that was the upstream brand colour.
+    -->
+    <color name="ic_launcher_plate">#00695C</color>
 </resources>
 

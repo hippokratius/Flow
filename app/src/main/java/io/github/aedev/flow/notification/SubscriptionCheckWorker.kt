@@ -5,6 +5,8 @@ import android.util.Log
 import androidx.work.*
 import io.github.aedev.flow.data.local.PlayerPreferences
 import io.github.aedev.flow.data.local.SubscriptionRepository
+import io.github.aedev.flow.data.source.SourceKind
+import io.github.aedev.flow.data.source.contentId
 import io.github.aedev.flow.network.AppProxyManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -118,7 +120,11 @@ class SubscriptionCheckWorker(
         try {
             val subscriptionRepository = SubscriptionRepository.getInstance(applicationContext)
             val allSubscriptions = subscriptionRepository.getAllSubscriptions().first()
-            val subscriptions = allSubscriptions.filter { it.isNotificationEnabled }
+            // RSS_URL_FORMAT is a YouTube endpoint. A federated channel id sent to it is a guaranteed
+            // 404 every six hours, so those subscriptions are skipped rather than polled in vain.
+            val subscriptions = allSubscriptions.filter {
+                it.isNotificationEnabled && it.channelId.contentId.kind == SourceKind.YOUTUBE
+            }
             
             if (subscriptions.isEmpty()) {
                 Log.d(TAG, "No subscriptions with notifications enabled to check")

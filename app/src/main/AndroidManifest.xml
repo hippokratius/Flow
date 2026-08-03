@@ -55,9 +55,11 @@
     <application
         android:name=".FlowApplication"
         android:allowBackup="true"
+        android:fullBackupContent="@xml/backup_rules"
+        android:dataExtractionRules="@xml/data_extraction_rules"
         android:banner="@drawable/tv_banner"
         android:icon="@mipmap/ic_launcher"
-        android:label="@string/app_name"
+        android:label="@string/app_brand_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.Flow"
@@ -157,6 +159,18 @@
                 <data android:pathPrefix="/watch" />
                 <data android:pathPrefix="/playlist" />
                 <data android:pathPrefix="/shorts" />
+            </intent-filter>
+
+            <!--
+                MiAuth return leg. The user authorises TubeHub in a browser and the instance sends
+                them back here with a session id. Disjoint from every filter above, and the
+                activity is already singleTop, so the running task is reused.
+            -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="tubehub" android:host="miauth" />
             </intent-filter>
 
             <!-- Share Intent for text/plain -->

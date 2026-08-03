@@ -1,6 +1,8 @@
 package io.github.aedev.flow.ui
 
 import io.github.aedev.flow.data.local.DEFAULT_NAV_TAB_ORDER
+import io.github.aedev.flow.data.source.SourceKind
+import io.github.aedev.flow.data.source.contentId
 import java.net.URI
 import java.net.URLEncoder
 
@@ -51,12 +53,73 @@ internal fun navRouteForIndex(index: Int): String = when (index) {
 internal fun youtubeChannelUrl(channelIdOrHandle: String): String? {
     val value = channelIdOrHandle.trim()
     if (value.isEmpty()) return null
+    // A channel from another source is not a YouTube handle. Without this guard the `else` branch
+    // below turns e.g. "peertube_tilvids.com_news" into "https://www.youtube.com/@peertube_..." and
+    // navigates to a page that cannot exist. Callers treat null as "no in-app channel page".
+    if (value.contentId.kind != SourceKind.YOUTUBE) return null
     return when {
         value.startsWith("http://") || value.startsWith("https://") -> normalizeYoutubeChannelUrl(value)
         value.startsWith("UC") -> "https://www.youtube.com/channel/$value"
         value.startsWith("@") -> "https://www.youtube.com/$value"
         else -> "https://www.youtube.com/@$value"
     }
+}
+
+/**
+ * Route pattern of the YouTube channel page.
+ *
+ * `plain` forces the untouched YouTube page for a channel that has a PeerTube counterpart, which is
+ * how the shared page offers "watch on YouTube only" without bouncing straight back.
+ */
+internal const val YOUTUBE_CHANNEL_ROUTE = "channel?url={channelUrl}&plain={plain}"
+
+/** Route pattern of the channel-links settings screen. Both arguments are optional. */
+internal const val CHANNEL_LINKS_ROUTE =
+    "settings/channel_links?youtubeId={youtubeId}&youtubeName={youtubeName}"
+
+/**
+ * Route to the channel-links screen, optionally pre-filled with the YouTube channel in hand.
+ *
+ * Called with arguments from a channel page — where the app already knows whose counterpart is being
+ * looked for — and without any from the settings list.
+ */
+internal fun channelLinksRoute(
+    youtubeChannelId: String = "",
+    youtubeChannelName: String = "",
+): String {
+    val encode = { value: String -> URLEncoder.encode(value.trim(), Charsets.UTF_8.name()) }
+    return "settings/channel_links?youtubeId=${encode(youtubeChannelId)}" +
+        "&youtubeName=${encode(youtubeChannelName)}"
+}
+
+/**
+ * The `UC…` id inside a YouTube channel URL, or null when the URL addresses the channel some other
+ * way.
+ *
+ * Used to ask whether a channel has a linked counterpart, which is keyed on the id. A `@handle` URL
+ * carries no id, so those channels are simply not gated — the same behaviour as before links existed.
+ */
+internal fun youtubeChannelIdFromUrl(url: String): String? {
+    val uri = runCatching { URI(url.trim()) }.getOrNull() ?: return null
+    val segments = uri.path.orEmpty().split('/').filter(String::isNotBlank)
+    if (segments.size < 2 || segments.first() != "channel") return null
+    return segments[1].takeIf { it.isNotBlank() }
+}
+
+/** Route pattern of the PeerTube channel page. Declared here so the arg name has one owner. */
+internal const val PEERTUBE_CHANNEL_ROUTE = "peertubeChannel?id={channelId}"
+
+/**
+ * In-app route to a PeerTube channel, or null when the id belongs to another source.
+ *
+ * Kept pure — no `android.net.Uri`, no `NavController` — so the dispatch in
+ * [navigateToYoutubeChannel] is unit testable.
+ */
+internal fun peerTubeChannelRoute(channelId: String): String? {
+    val id = channelId.trim().contentId
+    if (id.kind != SourceKind.PEERTUBE) return null
+    if (id.instanceHost.isNullOrBlank() || id.nativeId.isBlank()) return null
+    return "peertubeChannel?id=${URLEncoder.encode(id.raw, Charsets.UTF_8.name())}"
 }
 
 internal fun youtubeChannelRoute(channelIdOrHandle: String): String? =

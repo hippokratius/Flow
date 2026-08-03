@@ -3,6 +3,7 @@ package io.github.aedev.flow.data.local.entity
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 import io.github.aedev.flow.data.model.Video
+import io.github.aedev.flow.data.source.ContentId
 
 @Entity(tableName = "videos")
 data class VideoEntity(
@@ -33,7 +34,11 @@ data class VideoEntity(
             description = description,
             channelThumbnailUrl = channelThumbnailUrl,
             timestamp = timestamp,
-            isMusic = isMusic
+            isMusic = isMusic,
+            // Recomputed from the id rather than stored, which is what lets a federated video
+            // survive a round-trip through Room with no schema change.
+            source = ContentId(id).kind,
+            instanceHost = ContentId(id).instanceHost
         )
     }
 

@@ -281,6 +281,15 @@ fun VideoCard(
                         .align(Alignment.TopStart)
                         .padding(8.dp)
                 )
+            } else {
+                // Shares TopStart with the reminder bell, which is rarer and more time-critical, so
+                // it yields. BottomEnd is the duration pill and TopEnd the DeArrow marker.
+                VideoSourceBadge(
+                    source = video.source,
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .padding(8.dp)
+                )
             }
 
             // Watch progress bar
@@ -571,6 +580,13 @@ fun VideoCardHorizontal(
                         .align(Alignment.TopStart)
                         .padding(6.dp)
                 )
+            } else {
+                VideoSourceBadge(
+                    source = video.source,
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .padding(6.dp)
+                )
             }
 
             // Watch progress bar
@@ -766,6 +782,13 @@ fun VideoCardFullWidth(
 
             if (video.isUpcoming && video.id in upcomingReminderIds) {
                 UpcomingReminderBadge(
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .padding(8.dp)
+                )
+            } else {
+                VideoSourceBadge(
+                    source = video.source,
                     modifier = Modifier
                         .align(Alignment.TopStart)
                         .padding(8.dp)
@@ -1133,6 +1156,13 @@ fun CompactVideoCard(
                     )
                 }
             }
+
+            VideoSourceBadge(
+                source = video.source,
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(4.dp)
+            )
         }
 
         Spacer(modifier = Modifier.width(12.dp))
