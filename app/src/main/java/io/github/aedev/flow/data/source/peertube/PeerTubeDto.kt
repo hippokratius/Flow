@@ -37,6 +37,8 @@ data class PTVideoDto(
     val duration: Long = 0,
     val publishedAt: String? = null,
     val views: Long = 0,
+    /** Absent on instances that switched likes off, and on ones older than the field. */
+    val likes: Long = 0,
     val channel: PTChannelDto? = null,
     val tags: List<String> = emptyList(),
     val streamingPlaylists: List<PTStreamingPlaylistDto> = emptyList(),
