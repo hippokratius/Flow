@@ -3,7 +3,6 @@ package io.github.aedev.flow.ui.components
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
-import android.text.style.URLSpan
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
@@ -38,7 +37,6 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.res.stringResource
@@ -48,52 +46,47 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalDensity
 import io.github.aedev.flow.R
-import androidx.core.text.HtmlCompat
 import io.github.aedev.flow.data.model.Video
+import io.github.aedev.flow.utils.decodeRichText
 import io.github.aedev.flow.utils.formatLikeCount
 import io.github.aedev.flow.utils.formatViewCount
 import io.github.aedev.flow.utils.DateContext
 import kotlinx.coroutines.launch
 
-fun parseHtmlDescription(rawHtml: String): AnnotatedString {
-    // 1. Parse HTML into an Android Spanned object (Handles <br>, <a>, &amp;)
-    val spanned = HtmlCompat.fromHtml(rawHtml, HtmlCompat.FROM_HTML_MODE_COMPACT)
-    val text = spanned.toString()
+/**
+ * A video description, ready to render: links and timestamps highlighted and annotated so a tap on
+ * one can be resolved back to what it points at.
+ *
+ * The decoding of the text itself — markup, entities and, above all, line breaks — is
+ * [decodeRichText]'s job, shared with the comment list, because the two platforms disagree on what
+ * they send and that disagreement should be understood in exactly one place.
+ */
+fun parseHtmlDescription(rawDescription: String): AnnotatedString {
+    val (text, links) = decodeRichText(rawDescription)
 
     return buildAnnotatedString {
-        // 2. Append the clean text (no tags)
         append(text)
 
-        // 3. Find all URLSpans created by the HTML parser and apply Compose styles
-        val urlSpans = spanned.getSpans(0, spanned.length, URLSpan::class.java)
-        val htmlLinkRanges: List<IntRange> = urlSpans.map {
-            spanned.getSpanStart(it) until spanned.getSpanEnd(it)
-        }
-        for (span in urlSpans) {
-            val start = spanned.getSpanStart(span).coerceAtMost(text.length)
-            val end = spanned.getSpanEnd(span).coerceAtMost(text.length)
-            if (start >= end) continue
-            val rawUrl = span.url
-            val absoluteUrl = if (rawUrl.startsWith("/")) "https://www.youtube.com$rawUrl" else rawUrl
+        for (link in links) {
             addStyle(
                 style = SpanStyle(
                     color = Color(0xFF3EA6FF),
                     textDecoration = TextDecoration.Underline,
                     fontWeight = FontWeight.SemiBold
                 ),
-                start = start,
-                end = end
+                start = link.start,
+                end = link.end
             )
-            addStringAnnotation(tag = "URL", annotation = absoluteUrl, start = start, end = end)
+            addStringAnnotation(tag = "URL", annotation = link.url, start = link.start, end = link.end)
         }
 
-        // 4. Find plain-text URLs (https://... not covered by an anchor tag)
-        val htmlUrlStarts = urlSpans.map { spanned.getSpanStart(it) }.toSet()
+        // Plain-text URLs: what an uploader typed without an anchor around it, which is every link
+        // in a PeerTube description and most of them in a YouTube one.
+        val linkStarts = links.map { it.start }.toSet()
         val urlRegex = Regex("""https?://[^\s]+""")
         urlRegex.findAll(text).forEach { matchResult ->
             val start = matchResult.range.first
-            // Skip if already covered by an HTML anchor
-            if (start !in htmlUrlStarts) {
+            if (start !in linkStarts) {
                 val end = matchResult.range.last + 1
                 addStyle(
                     style = SpanStyle(

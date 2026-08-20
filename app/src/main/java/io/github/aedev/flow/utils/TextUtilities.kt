@@ -1,6 +1,5 @@
 package io.github.aedev.flow.utils
 
-import android.text.style.URLSpan
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.LinkAnnotation
@@ -8,12 +7,11 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
-import androidx.core.text.HtmlCompat
 
 /**
  * Pure (non-Composable) utility to format comment/reply text with:
  * - HTML entity decoding (&apos;, &quot;, etc.)
- * - Line break handling (<br> to \n)
+ * - Line break handling, for HTML `<br>` and for the plain newlines PeerTube sends alike
  * - Clickable URLs (preserving actual href from <a> tags, not just visible text)
  * - Clickable Timestamps (0:00) — TIMESTAMP takes priority over URL for
  *   YouTube chapter/timestamp links like <a href="...?t=74">1:14</a>
@@ -26,15 +24,10 @@ fun formatRichText(
     primaryColor: Color,
     textColor: Color
 ): AnnotatedString {
-    // 1. Replace <br> with newlines, then parse HTML into a Spanned to decode entities and extract URLSpans.
-    val processedHtml = text.replace(Regex("(?i)<br\\s*/?>"), "\n")
-    val spanned = HtmlCompat.fromHtml(processedHtml, HtmlCompat.FROM_HTML_MODE_LEGACY)
-    val plainText = spanned.toString().trimEnd()
-
-    val urlSpans = spanned.getSpans(0, spanned.length, URLSpan::class.java)
-    val htmlLinkRanges: List<IntRange> = urlSpans.map {
-        spanned.getSpanStart(it) until spanned.getSpanEnd(it)
-    }
+    // Markup, line breaks and entities are decoded in one shared place: comments and descriptions
+    // reach this from both platforms and only [decodeRichText] knows what each of them sends.
+    val (plainText, links) = decodeRichText(text)
+    val htmlLinkRanges: List<IntRange> = links.map { it.start until it.end }
 
     return buildAnnotatedString {
         append(plainText)
@@ -54,12 +47,10 @@ fun formatRichText(
         }
 
         // ── 2. URLs from HTML anchor tags (href preserved) ────────────────────
-        for (span in urlSpans) {
-            val s = spanned.getSpanStart(span).coerceAtMost(plainText.length)
-            val e = spanned.getSpanEnd(span).coerceAtMost(plainText.length)
-            if (s >= e) continue
-            val rawUrl = span.url
-            val absoluteUrl = if (rawUrl.startsWith("/")) "https://www.youtube.com$rawUrl" else rawUrl
+        for (link in links) {
+            val s = link.start
+            val e = link.end
+            val absoluteUrl = link.url
             if (annotatedTimestampRanges.any { range -> s in range || (s <= range.first && e >= range.last + 1) }) continue
             addStyle(
                 SpanStyle(color = primaryColor, textDecoration = TextDecoration.Underline, fontWeight = FontWeight.Medium),

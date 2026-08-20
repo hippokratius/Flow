@@ -17,6 +17,7 @@ import io.github.aedev.flow.data.recommendation.InteractionType
 import io.github.aedev.flow.data.repository.YouTubeRepository
 import io.github.aedev.flow.data.source.SourceKind
 import io.github.aedev.flow.data.source.contentId
+import io.github.aedev.flow.data.source.isTruncatedDescription
 import io.github.aedev.flow.player.BackgroundPlaybackPolicy
 import io.github.aedev.flow.player.EnhancedPlayerManager
 import io.github.aedev.flow.player.EnhancedMusicPlayerManager
@@ -2887,16 +2888,22 @@ class VideoPlayerViewModel @Inject constructor(
     /**
      * Fills in what the player knows about a federated video.
      *
-     * Mirrors the YouTube enrichment further up: only blank fields are replaced, so a video opened
-     * from a feed — which already carries everything — is left alone, and one opened by id gets its
-     * title, channel, runtime and view count. The runtime matters beyond the display: without it the
+     * Mirrors the YouTube enrichment further up: blank fields are replaced, so a video opened from a
+     * feed — which already carries most of it — is left alone, and one opened by id gets its title,
+     * channel, runtime and view count. The runtime matters beyond the display: without it the
      * pairing cannot even try, so the source switch depended on this too.
+     *
+     * The description is the exception, and the reason a video that looks complete is still fetched:
+     * a listing only ever carries the first 250 characters of it.
      */
     private suspend fun enrichExternalSourceVideo(contentId: io.github.aedev.flow.data.source.ContentId) {
         val videoId = contentId.raw
         val cached = _uiState.value.cachedVideo?.takeIf { it.id == videoId } ?: return
         val alreadyComplete =
-            cached.title.isNotBlank() && cached.duration > 0 && cached.channelId.isNotBlank()
+            cached.title.isNotBlank() && cached.duration > 0 && cached.channelId.isNotBlank() &&
+                // A video that came from a listing carries a description cut short after 250
+                // characters; only the detail endpoint has the rest of it.
+                !cached.description.isTruncatedDescription()
 
         val fetched = if (alreadyComplete) {
             null
@@ -2915,7 +2922,9 @@ class VideoPlayerViewModel @Inject constructor(
                 thumbnailUrl = current.thumbnailUrl.ifBlank { fetched.thumbnailUrl },
                 duration = current.duration.takeIf { it > 0 } ?: fetched.duration,
                 viewCount = current.viewCount.takeIf { it > 0L } ?: fetched.viewCount,
-                description = current.description.ifBlank { fetched.description },
+                // The one field where the fetched value wins: the cached one is the listing's
+                // truncated stub, and the detail endpoint is where the whole text comes from.
+                description = fetched.description.ifBlank { current.description },
                 timestamp = current.timestamp.takeIf { it > 0L } ?: fetched.timestamp,
                 uploadDate = current.uploadDate.ifBlank { fetched.uploadDate },
                 source = fetched.source,

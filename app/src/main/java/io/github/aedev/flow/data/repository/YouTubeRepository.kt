@@ -563,6 +563,11 @@ class YouTubeRepository @Inject constructor(
                     info.uploadDate?.offsetDateTime()?.toInstant()?.toEpochMilli(),
                     info.textualUploadDate
                 ),
+                // The reason a caller asks for a single video rather than taking the one it already
+                // has from a listing: listings carry no description at all, and this is what the
+                // info panel and the description sheet read when the source switch shows the
+                // YouTube copy of a federated upload.
+                description = info.description?.content.orEmpty(),
                 channelThumbnailUrl = bestAvatar,
                 channelThumbnailUrls = avatarUrls
             )

@@ -21,6 +21,7 @@ import io.github.aedev.flow.data.source.SourceCursor
 import io.github.aedev.flow.data.source.SourceError
 import io.github.aedev.flow.data.source.SourceKind
 import io.github.aedev.flow.data.source.SourcePage
+import io.github.aedev.flow.data.source.isTruncatedDescription
 import io.github.aedev.flow.data.source.watchUrl
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -68,7 +69,32 @@ class PeerTubeContentSource @Inject constructor(
             ?: return null
         // The whole response, not a hand-picked subset: this is where the player gets a federated
         // video's title, channel, artwork and view count from.
-        return detail.copy(uuid = detail.uuid.ifBlank { id.nativeId }).toVideo(instance)
+        return detail
+            .copy(
+                uuid = detail.uuid.ifBlank { id.nativeId },
+                description = fullDescription(instance, id.nativeId, detail.description),
+            )
+            .toVideo(instance)
+    }
+
+    /**
+     * [truncated] if that is already the whole text, the description endpoint's answer otherwise.
+     *
+     * Instances from PeerTube 6.0 on serve the full description with the video, so the extra request
+     * is made only for the ones that still cut it — and falls back to the stub rather than to nothing
+     * when it fails, since half a description beats none.
+     */
+    private suspend fun fullDescription(
+        instance: PeerTubeInstance,
+        uuid: String,
+        truncated: String?,
+    ): String? {
+        if (truncated == null || !truncated.isTruncatedDescription()) return truncated
+        return runCatching { api.videoDescription(instance.url, uuid) }
+            .getOrNull()
+            ?.description
+            ?.takeIf { it.isNotBlank() }
+            ?: truncated
     }
 
     override suspend fun channel(id: ContentId): Channel? {

@@ -99,6 +99,17 @@ data class PTChannelDetailDto(
     val banners: List<PTAvatarDto> = emptyList(),
 )
 
+/**
+ * The whole description of a video, from `GET /api/v1/videos/{id}/description`.
+ *
+ * PeerTube cuts the `description` it puts on a video down to 250 characters and serves the rest from
+ * this endpoint — see [PeerTubeApi.videoDescription].
+ */
+@Serializable
+data class PTVideoDescriptionDto(
+    val description: String? = null,
+)
+
 /** Comment threads of `GET /api/v1/videos/{id}/comment-threads`. */
 @Serializable
 data class PTCommentListDto(
