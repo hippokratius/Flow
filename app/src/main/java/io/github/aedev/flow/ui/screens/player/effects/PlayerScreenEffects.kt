@@ -60,9 +60,10 @@ private fun VideoPlayerUiState.isCurrentLiveStream(): Boolean =
 /**
  * The title to write into the watch history.
  *
- * Through the same policy the player itself shows, so the history cannot end up describing a video
- * differently from the screen the user was just looking at — this runs every ten seconds while
- * playing and overwrites the row each time.
+ * Through the same policy the player shows, minus DeArrow — a rewritten thumbnail title is a display
+ * preference, and the history should keep the video's own name. What it does rule out is the
+ * English-pinned extraction answer, which this used to persist: it runs every ten seconds while
+ * playing and replaces the row each time.
  */
 private fun resolveHistoryTitle(video: Video, extractedName: String?): String =
     PlayerTitlePolicy.resolveDisplayTitle(

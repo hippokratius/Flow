@@ -11,6 +11,7 @@ package io.github.aedev.flow.utils
 
 import android.content.Context
 import android.content.res.Resources
+import io.github.aedev.flow.innertube.YouTube
 import io.github.aedev.flow.innertube.models.YouTubeLocale
 import io.github.aedev.flow.innertube.models.normalizeYouTubeHostLanguage
 import org.schabi.newpipe.extractor.NewPipe
@@ -36,9 +37,11 @@ import org.schabi.newpipe.extractor.localization.Localization
  */
 object ContentLocale {
 
-    private const val PREFS_FILE = "flow_content_locale"
-    private const val KEY_GL = "gl"
-    private const val KEY_HL = "hl"
+    // The file FlowApplication already opens for its visitor data, so the seed on the cold-start
+    // path costs no additional file read.
+    private const val PREFS_FILE = "flow_prefs"
+    private const val KEY_GL = "content_locale_gl"
+    private const val KEY_HL = "content_locale_hl"
 
     @Volatile
     private var current: YouTubeLocale = YouTubeLocale(gl = FALLBACK_REGION, hl = "en")
@@ -52,9 +55,13 @@ object ContentLocale {
         mirror = prefs
         val gl = prefs.getString(KEY_GL, null)
         val hl = prefs.getString(KEY_HL, null)
-        current = YouTubeLocale(
-            gl = resolveContentRegion(gl, deviceRegion(context)),
-            hl = normalizeYouTubeHostLanguage(hl ?: AppLanguageManager.loadSelectedLanguageTag(context)),
+        publish(
+            YouTubeLocale(
+                gl = resolveContentRegion(gl, deviceRegion()),
+                hl = normalizeYouTubeHostLanguage(
+                    hl ?: AppLanguageManager.loadSelectedLanguageTag(context)
+                ),
+            )
         )
     }
 
@@ -63,8 +70,22 @@ object ContentLocale {
 
     /** The one writer. Called from the preference collector in `FlowApplication`. */
     fun apply(locale: YouTubeLocale) {
-        current = locale
+        if (locale == current) return
+        publish(locale)
         mirror?.edit()?.putString(KEY_GL, locale.gl)?.putString(KEY_HL, locale.hl)?.apply()
+    }
+
+    /**
+     * Both clients at once.
+     *
+     * The InnerTube singleton is the half that cannot wait: it seeds itself from `Locale.getDefault()`,
+     * whose country the app's own language override empties, and the visitor-data request that
+     * decides which country YouTube thinks the user is in goes out during startup — long before
+     * DataStore has answered.
+     */
+    private fun publish(locale: YouTubeLocale) {
+        current = locale
+        YouTube.locale = locale
     }
 
     /**
@@ -79,8 +100,7 @@ object ContentLocale {
     }
 
     /** The region to fall back on when the user has never picked one. */
-    fun defaultRegion(context: Context): String =
-        resolveContentRegion(stored = null, deviceCountry = deviceRegion(context))
+    fun defaultRegion(): String = resolveContentRegion(stored = null, deviceCountry = deviceRegion())
 
     /**
      * The country of the device itself.
@@ -91,10 +111,9 @@ object ContentLocale {
      * device" path silently lands on the United States. `Resources.getSystem()` is the device's own
      * configuration and is not affected by that override.
      */
-    fun deviceRegion(context: Context): String {
+    fun deviceRegion(): String {
         val system = Resources.getSystem().configuration.locales
-        val fromSystem = if (system.isEmpty) "" else system[0].country
-        return fromSystem.ifBlank { context.resources.configuration.locales[0].country }
+        return system.takeIf { !it.isEmpty }?.get(0)?.country.orEmpty()
     }
 }
 

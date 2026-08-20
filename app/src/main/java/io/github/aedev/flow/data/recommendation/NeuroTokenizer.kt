@@ -200,30 +200,31 @@ internal class NeuroTokenizer {
         "ever", "never", "always", "every",
         "still", "also", "too", "very", "only",
         "then", "than", "well", "even",
-        // Function words of the other languages Flow ships in. With an English-only list, a German
-        // title kept "der", "die" and "und" as topics — and topics become search queries, so the
-        // feed went looking for videos about the word "die".
+        // Function words of the languages Flow ships in. With an English-only list a German title
+        // kept der, die and und as topics — and topics become search queries, so the feed went
+        // looking for videos about the word die. Words that double as English topic words (war,
+        // man, van, dos, plus) are deliberately absent: World War II must not lose its subject.
         // German
         "der", "die", "und", "das", "den", "dem", "des", "ein", "eine", "einen", "einem", "einer",
         "oder", "aber", "auch", "nicht", "mit", "ohne", "von", "vom", "zum", "zur",
         "für", "auf", "aus", "bei", "nach", "über", "unter", "wie", "wer", "wann",
-        "ist", "sind", "war", "waren", "hat", "haben", "wird", "werden", "kann", "können",
-        "mein", "dein", "sein", "ihre", "dieser", "diese", "dieses", "alle", "alles", "man",
-        "folge", "teil", "neu", "deutsch",
+        "ist", "sind", "waren", "haben", "wird", "werden", "kann", "können",
+        "mein", "dein", "sein", "ihre", "dieser", "diese", "dieses", "alle", "alles",
+        "folge", "teil", "deutsch",
         // Spanish / Portuguese
-        "que", "por", "con", "para", "los", "las", "del", "una", "uno", "como", "más",
-        "pero", "todo", "muy", "este", "esta", "esto", "sobre", "sin", "hay",
-        "não", "uma", "dos", "isso", "mais", "você", "está",
+        "que", "por", "con", "para", "del", "una", "como", "más",
+        "pero", "todo", "muy", "este", "esta", "esto", "sobre",
+        "não", "uma", "isso", "mais", "você", "está",
         // French
-        "les", "une", "est", "sont", "pour", "avec", "sans", "dans", "sur",
-        "tout", "tous", "cette", "être", "avoir", "plus", "vous", "nous",
+        "une", "sont", "pour", "avec", "sans", "dans", "sur",
+        "tout", "tous", "cette", "être", "avoir", "vous", "nous",
         // Italian
-        "che", "non", "per", "sono", "questo", "questa", "come", "più",
+        "che", "sono", "questo", "questa", "più",
         // Dutch / Scandinavian / Polish / Turkish
-        "een", "het", "van", "voor", "niet", "zijn", "maar", "ook",
-        "och", "att", "som", "det", "för", "med", "til", "ikke", "eller",
+        "een", "het", "voor", "niet", "zijn", "maar", "ook",
+        "och", "för", "ikke", "eller",
         "jest", "nie", "sie", "tego", "jak", "czy",
-        "bir", "için", "daha", "çok", "ile"
+        "bir", "için", "daha", "çok"
     )
 
     // ── Tag Spam Filter ──

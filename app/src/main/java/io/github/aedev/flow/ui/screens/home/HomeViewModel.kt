@@ -560,6 +560,7 @@ class HomeViewModel @Inject constructor(
     private val homePrefetchQueue = HomePrefetchQueue()
     private val homePrefetchWorkerLock = Any()
     private var homePrefetchJob: Job? = null
+    private var hydrateJob: Job? = null
 
     private var subsBacklog: List<Video> = emptyList()
 
@@ -574,6 +575,7 @@ class HomeViewModel @Inject constructor(
     private var currentQueryIndex = 0
     private val discoveryQueries = mutableListOf<String>()
     private var wave2Job: Job? = null
+    private var flowFeedJob: Job? = null
     
     private var viewHistory: ViewHistory? = null
     
@@ -685,7 +687,10 @@ class HomeViewModel @Inject constructor(
                     is FeedInvalidationBus.Event.ContentRegionChanged -> {
                         // The Room rows and the in-memory feed are already gone — cleared where the
                         // preference is watched, which happens whether or not this screen exists.
-                        // What is left is this ViewModel's own memory and the visible list.
+                        // What is left is this ViewModel's own memory, the loads already in flight
+                        // for the old country, and the visible list.
+                        flowFeedJob?.cancel()
+                        hydrateJob?.cancel()
                         relatedCache.clear()
                         shortsRepository.clearCaches()
                         refreshFeed()
@@ -852,7 +857,10 @@ class HomeViewModel @Inject constructor(
     }
 
     private fun hydratePersistentHomeFeed() {
-        viewModelScope.launch(PerformanceDispatcher.networkIO) {
+        hydrateJob?.cancel()
+        // Tracked for the same reason as the feed load: this one ends by writing what it painted
+        // back into the cache, which must not outlive a region change.
+        hydrateJob = viewModelScope.launch(PerformanceDispatcher.networkIO) {
             val cached = runCatching {
                 persistentHomeFeedCache.loadLastFeed(cacheFilters())
             }.getOrElse { emptyList() }
@@ -898,9 +906,13 @@ class HomeViewModel @Inject constructor(
         if (_uiState.value.isLoading && !forceRefresh) return
         
         wave2Job?.cancel()
+        // Tracked, so a forced reload can cancel the one it replaces. An untracked load kept
+        // running and eventually wrote its results into both feed caches — which, after a region
+        // change, means the country the user just left being written back over the cleared rows.
+        flowFeedJob?.cancel()
         _uiState.update { it.copy(isLoading = true, error = null) }
         
-        viewModelScope.launch(PerformanceDispatcher.networkIO) {
+        flowFeedJob = viewModelScope.launch(PerformanceDispatcher.networkIO) {
             try {
                 discoveryQueries.clear()
                 discoveryQueries.addAll(FlowNeuroEngine.generateDiscoveryQueries())
@@ -1211,6 +1223,11 @@ class HomeViewModel @Inject constructor(
                 }
                 requestOptimisticHomePrefetch()
                 
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                // A cancelled load is a load that was replaced — by a refresh, or by the region
+                // changing under it. Reporting it as a failure would flash an error and start a
+                // fallback load for the country the user just left.
+                throw e
             } catch (e: Exception) {
                  _uiState.update { it.copy(isLoading = false, isRefreshing = false, error = appContext.getString(R.string.error_failed_to_load_feed)) }
                  loadTrendingFallback() 

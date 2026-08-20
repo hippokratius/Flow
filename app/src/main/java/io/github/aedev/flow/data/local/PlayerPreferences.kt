@@ -14,6 +14,7 @@ import io.github.aedev.flow.utils.DateFormatStyle
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import io.github.aedev.flow.utils.ContentLocale
+import io.github.aedev.flow.utils.resolveContentRegion
 import kotlinx.coroutines.flow.map
 
 internal fun resolveMigratedHideWatchedPreference(
@@ -834,7 +835,10 @@ class PlayerPreferences(context: Context) {
      */
     val trendingRegion: Flow<String> = context.playerPreferencesDataStore.data
         .map { preferences ->
-            preferences[Keys.TRENDING_REGION] ?: ContentLocale.defaultRegion(context)
+            // Resolved rather than passed through: a stored value naming a country YouTube has no
+            // feed for would otherwise reach the extractor while the rest of the app used the
+            // fallback, which is the split this whole setting exists to avoid.
+            resolveContentRegion(preferences[Keys.TRENDING_REGION], ContentLocale.deviceRegion())
         }
     
     suspend fun setTrendingRegion(region: String) {
