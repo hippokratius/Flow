@@ -682,6 +682,14 @@ class HomeViewModel @Inject constructor(
                         // Full clear — topic signals changed, discovery queries will differ
                         shortsRepository.clearCaches()
                     }
+                    is FeedInvalidationBus.Event.ContentRegionChanged -> {
+                        // The Room rows and the in-memory feed are already gone — cleared where the
+                        // preference is watched, which happens whether or not this screen exists.
+                        // What is left is this ViewModel's own memory and the visible list.
+                        relatedCache.clear()
+                        shortsRepository.clearCaches()
+                        refreshFeed()
+                    }
                     is FeedInvalidationBus.Event.MarkedWatched -> {
                         HomeFeedCache.filterOut(videoId = event.videoId)
                         viewModelScope.launch(PerformanceDispatcher.networkIO) {

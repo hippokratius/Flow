@@ -199,7 +199,31 @@ internal class NeuroTokenizer {
         "really", "actually", "literally", "basically",
         "ever", "never", "always", "every",
         "still", "also", "too", "very", "only",
-        "then", "than", "well", "even"
+        "then", "than", "well", "even",
+        // Function words of the other languages Flow ships in. With an English-only list, a German
+        // title kept "der", "die" and "und" as topics — and topics become search queries, so the
+        // feed went looking for videos about the word "die".
+        // German
+        "der", "die", "und", "das", "den", "dem", "des", "ein", "eine", "einen", "einem", "einer",
+        "oder", "aber", "auch", "nicht", "mit", "ohne", "von", "vom", "zum", "zur",
+        "für", "auf", "aus", "bei", "nach", "über", "unter", "wie", "wer", "wann",
+        "ist", "sind", "war", "waren", "hat", "haben", "wird", "werden", "kann", "können",
+        "mein", "dein", "sein", "ihre", "dieser", "diese", "dieses", "alle", "alles", "man",
+        "folge", "teil", "neu", "deutsch",
+        // Spanish / Portuguese
+        "que", "por", "con", "para", "los", "las", "del", "una", "uno", "como", "más",
+        "pero", "todo", "muy", "este", "esta", "esto", "sobre", "sin", "hay",
+        "não", "uma", "dos", "isso", "mais", "você", "está",
+        // French
+        "les", "une", "est", "sont", "pour", "avec", "sans", "dans", "sur",
+        "tout", "tous", "cette", "être", "avoir", "plus", "vous", "nous",
+        // Italian
+        "che", "non", "per", "sono", "questo", "questa", "come", "più",
+        // Dutch / Scandinavian / Polish / Turkish
+        "een", "het", "van", "voor", "niet", "zijn", "maar", "ook",
+        "och", "att", "som", "det", "för", "med", "til", "ikke", "eller",
+        "jest", "nie", "sie", "tego", "jak", "czy",
+        "bir", "için", "daha", "çok", "ile"
     )
 
     // ── Tag Spam Filter ──

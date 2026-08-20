@@ -20,6 +20,7 @@ import io.github.aedev.flow.data.source.contentId
 import io.github.aedev.flow.player.BackgroundPlaybackPolicy
 import io.github.aedev.flow.player.FederatedMetadataPolicy
 import io.github.aedev.flow.player.EnhancedPlayerManager
+import io.github.aedev.flow.player.PlayerTitlePolicy
 import io.github.aedev.flow.player.EnhancedMusicPlayerManager
 import io.github.aedev.flow.player.GlobalPlayerState
 import io.github.aedev.flow.player.MiniPlayerExpansionState
@@ -2293,7 +2294,10 @@ class VideoPlayerViewModel @Inject constructor(
 
         val details = result.playerResponse.videoDetails
         val cached = _uiState.value.cachedVideo
-        val title = details?.title?.takeIf { it.isNotBlank() } ?: cached?.title ?: "Live"
+        val title = PlayerTitlePolicy.resolveDisplayTitle(
+            cachedTitle = cached?.title,
+            extractionTitle = details?.title,
+        ).ifBlank { "Live" }
         val channel = details?.author?.takeIf { it.isNotBlank() } ?: cached?.channelName ?: ""
         val channelId = details?.channelId?.takeIf { it.isNotBlank() } ?: cached?.channelId ?: ""
         val thumbnail = details?.thumbnail?.thumbnails?.maxByOrNull { it.height ?: 0 }?.url
@@ -2682,7 +2686,12 @@ class VideoPlayerViewModel @Inject constructor(
 
         val details = result.playerResponse.videoDetails
         val cached = _uiState.value.cachedVideo
-        val title = details?.title?.takeIf { it.isNotBlank() } ?: cached?.title ?: ""
+        // The cached title comes from a list that asked in the user's language; this response asked
+        // in English on purpose. See [PlayerTitlePolicy].
+        val title = PlayerTitlePolicy.resolveDisplayTitle(
+            cachedTitle = cached?.title,
+            extractionTitle = details?.title,
+        )
         val channel = details?.author?.takeIf { it.isNotBlank() } ?: cached?.channelName ?: ""
         val channelId = details?.channelId?.takeIf { it.isNotBlank() } ?: cached?.channelId ?: ""
         val thumbnail = details?.thumbnail?.thumbnails?.maxByOrNull { it.height ?: 0 }?.url

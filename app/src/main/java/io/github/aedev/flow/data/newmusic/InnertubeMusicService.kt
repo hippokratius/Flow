@@ -1,7 +1,6 @@
 package io.github.aedev.flow.data.newmusic
 
 import io.github.aedev.flow.innertube.YouTube
-import io.github.aedev.flow.innertube.models.YouTubeLocale
 import io.github.aedev.flow.innertube.models.YTItem
 import io.github.aedev.flow.innertube.models.SongItem
 import io.github.aedev.flow.innertube.YouTube.SearchFilter
@@ -15,19 +14,18 @@ import io.github.aedev.flow.ui.screens.music.ArtistDetails
 import io.github.aedev.flow.innertube.pages.AlbumPage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.util.Locale
 
 /**
  * Hybrid Music Service using Innertube for metadata and discovery.
  * Inspired by Metrolist's implementation.
  */
+/*
+ * Note the absence of an init block. This object used to assign `YouTube.locale` from the device
+ * locale on first touch, so opening the music tab repointed every InnerTube request in the app away
+ * from the user's chosen region — and the preference collector, being edge-triggered, never undid
+ * it. The locale belongs to [io.github.aedev.flow.utils.ContentLocale]; nothing here needs one.
+ */
 object InnertubeMusicService {
-    
-    init {
-        val lang    = Locale.getDefault().language.ifEmpty { "en" }
-        val country = Locale.getDefault().country.ifEmpty  { "US" }
-        YouTube.locale = YouTubeLocale(gl = country, hl = lang)
-    }
 
     /**
      * Fetch trending music tracks from Innertube's Home/Music page.

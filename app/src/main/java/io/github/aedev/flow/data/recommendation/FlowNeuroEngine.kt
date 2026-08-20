@@ -998,9 +998,7 @@ class FlowNeuroEngine(private val appContext: Context) {
                         }
                     }
             } else {
-                val preferred = brain.preferredTopics.toList()
-                if (preferred.isNotEmpty()) preferred.shuffled().take(5)
-                else listOf("Music", "Science", "Technology", "Education", "Nature")
+                coldStartQueries(brain.preferredTopics, blocked)
             }
 
             // ── Query rotation: filter queries too similar to recently used ones ──
@@ -1780,4 +1778,24 @@ class FlowNeuroEngine(private val appContext: Context) {
         }
     }
 
+}
+
+/**
+ * What the discovery lane should search for when the engine has nothing to go on yet.
+ *
+ * Nothing, deliberately. This is reached on a fresh install, where it used to answer with five
+ * English words — "Music", "Science", "Technology" — and YouTube answers an English query with
+ * English videos whatever region the request carries. Those five searches were a third of the home
+ * feed for someone who had not watched anything yet, which is precisely when the feed is judged.
+ * Leaving the slots to the region's own trending is the better answer, and the lane fills itself as
+ * soon as there is one watched video to learn from.
+ *
+ * Top-level so it can be tested: the engine itself needs a Context and a singleton to exist.
+ */
+internal fun coldStartQueries(preferredTopics: Set<String>, blocked: Set<String>): List<String> {
+    if (preferredTopics.isEmpty()) return emptyList()
+    return preferredTopics
+        .filterNot { topic -> blocked.any { topic.lowercase().contains(it) } }
+        .shuffled()
+        .take(5)
 }

@@ -49,6 +49,15 @@ object FeedInvalidationBus {
         data class ChannelBlocked(val channelId: String, val videoId: String) : Event()
         data class NotInterested(val videoId: String, val channelId: String) : Event()
         data class MarkedWatched(val videoId: String) : Event()
+
+        /**
+         * The content region changed, so every list on screen describes the wrong country.
+         *
+         * Emitted from `FlowApplication`, which already watches this preference and is alive
+         * whether or not the feed has ever been opened — the caches it clears alongside this event
+         * outlive any ViewModel.
+         */
+        data class ContentRegionChanged(val gl: String) : Event()
     }
 
     private val _events = MutableSharedFlow<Event>(extraBufferCapacity = 8)

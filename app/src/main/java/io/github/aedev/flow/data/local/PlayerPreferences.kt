@@ -13,6 +13,7 @@ import io.github.aedev.flow.utils.DateDisplayMode
 import io.github.aedev.flow.utils.DateFormatStyle
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
+import io.github.aedev.flow.utils.ContentLocale
 import kotlinx.coroutines.flow.map
 
 internal fun resolveMigratedHideWatchedPreference(
@@ -824,9 +825,16 @@ class PlayerPreferences(context: Context) {
             preferences[Keys.RELATED_CARD_STYLE] = style.name
         }
     }
+    /**
+     * The region every YouTube request carries.
+     *
+     * An absent key means the user never opened the picker, not that they chose the United States,
+     * so their device's own country answers — a hardcoded "US" default is how a German phone ended
+     * up with American trending videos out of the box.
+     */
     val trendingRegion: Flow<String> = context.playerPreferencesDataStore.data
         .map { preferences ->
-            preferences[Keys.TRENDING_REGION] ?: "US"
+            preferences[Keys.TRENDING_REGION] ?: ContentLocale.defaultRegion(context)
         }
     
     suspend fun setTrendingRegion(region: String) {

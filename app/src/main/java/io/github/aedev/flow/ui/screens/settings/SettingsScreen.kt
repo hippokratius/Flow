@@ -49,6 +49,8 @@ import io.github.aedev.flow.data.local.PlayerPreferences
 import io.github.aedev.flow.data.local.AppUiModePreferences
 import io.github.aedev.flow.platform.AppUiMode
 import io.github.aedev.flow.utils.AppLanguageManager
+import io.github.aedev.flow.utils.ContentLocale
+import io.github.aedev.flow.utils.YOUTUBE_REGIONS
 import com.google.gson.JsonParser
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -126,7 +128,7 @@ fun SettingsScreen(
     var updateAvailableTag by remember { mutableStateOf<String?>(null) }
     
     // Player preferences states
-    val currentRegion by playerPreferences.trendingRegion.collectAsState(initial = "US")
+    val currentRegion by playerPreferences.trendingRegion.collectAsState(initial = ContentLocale.snapshot().gl)
     val currentAppLanguage by playerPreferences.appLanguage.collectAsState(initial = AppLanguageManager.SYSTEM_DEFAULT)
     val discordSettingsState by DiscordPresenceRuntime.settingsState.collectAsStateWithLifecycle()
     val discordSettingsSummary = discordSettingsSummaryText(discordSettingsState)
@@ -158,7 +160,7 @@ fun SettingsScreen(
     }
 
     // Optimize Region Dialog: compute list only once
-    val regionList = remember { REGION_NAMES.toList() }
+    val regionList = remember { YOUTUBE_REGIONS.toList() }
     val appLanguageOptions = remember { AppLanguageManager.getSupportedLanguages() }
     val currentAppLanguageLabel = remember(currentAppLanguage, appLanguageOptions) {
         val normalizedLanguage = AppLanguageManager.normalizeLanguageTag(currentAppLanguage)
@@ -269,7 +271,7 @@ fun SettingsScreen(
         SettingSearchEntry(Icons.Outlined.Slideshow, androidx.compose.ui.res.stringResource(io.github.aedev.flow.R.string.shorts_quality_settings_title), androidx.compose.ui.res.stringResource(io.github.aedev.flow.R.string.shorts_quality_settings_subtitle), secContentPlayback, onNavigateToShortsQuality),
         SettingSearchEntry(Icons.Outlined.Speed, androidx.compose.ui.res.stringResource(io.github.aedev.flow.R.string.settings_item_buffer), androidx.compose.ui.res.stringResource(io.github.aedev.flow.R.string.settings_item_buffer_subtitle), secContentPlayback, onNavigateToBufferSettings),
         SettingSearchEntry(Icons.Outlined.Download, androidx.compose.ui.res.stringResource(io.github.aedev.flow.R.string.settings_item_downloads), androidx.compose.ui.res.stringResource(io.github.aedev.flow.R.string.settings_item_downloads_subtitle), secContentPlayback, onNavigateToDownloads),
-        SettingSearchEntry(Icons.Outlined.TrendingUp, androidx.compose.ui.res.stringResource(io.github.aedev.flow.R.string.settings_item_region), REGION_NAMES[currentRegion] ?: currentRegion, secContentPlayback) { showRegionDialog = true },
+        SettingSearchEntry(Icons.Outlined.TrendingUp, androidx.compose.ui.res.stringResource(io.github.aedev.flow.R.string.settings_item_region), YOUTUBE_REGIONS[currentRegion] ?: currentRegion, secContentPlayback) { showRegionDialog = true },
         SettingSearchEntry(Icons.Outlined.NotificationsNone, androidx.compose.ui.res.stringResource(io.github.aedev.flow.R.string.settings_item_notifications), androidx.compose.ui.res.stringResource(io.github.aedev.flow.R.string.settings_item_notifications_subtitle), secNotifications, onNavigateToNotifications),
         SettingSearchEntry(Icons.Outlined.History, androidx.compose.ui.res.stringResource(io.github.aedev.flow.R.string.settings_item_search_history), androidx.compose.ui.res.stringResource(io.github.aedev.flow.R.string.settings_item_search_history_subtitle), secDataManagement, onNavigateToSearchHistory),
         SettingSearchEntry(Icons.Outlined.Schedule, androidx.compose.ui.res.stringResource(io.github.aedev.flow.R.string.settings_item_time_management), androidx.compose.ui.res.stringResource(io.github.aedev.flow.R.string.settings_item_time_management_subtitle), secDataManagement, onNavigateToTimeManagement),
@@ -871,7 +873,7 @@ item {
                     SettingsItem(
                         icon = Icons.Outlined.TrendingUp,
                         title = androidx.compose.ui.res.stringResource(io.github.aedev.flow.R.string.settings_item_region),
-                        subtitle = REGION_NAMES[currentRegion] ?: currentRegion,
+                        subtitle = YOUTUBE_REGIONS[currentRegion] ?: currentRegion,
                         onClick = { showRegionDialog = true }
                     )
                 }
@@ -1282,43 +1284,6 @@ fun BrainTraitRow(label: String, value: Double, leftLabel: String, rightLabel: S
         }
     }
 }
-
-private val REGION_NAMES = mapOf(
-    "DZ" to "Algeria", "AS" to "American Samoa", "AI" to "Anguilla", "AR" to "Argentina",
-    "AW" to "Aruba", "AU" to "Australia", "AT" to "Austria", "AZ" to "Azerbaijan",
-    "BH" to "Bahrain", "BD" to "Bangladesh", "BY" to "Belarus", "BE" to "Belgium",
-    "BM" to "Bermuda", "BO" to "Bolivia", "BA" to "Bosnia and Herzegovina", "BR" to "Brazil",
-    "IO" to "British Indian Ocean Territory", "VG" to "British Virgin Islands", "BG" to "Bulgaria", "KH" to "Cambodia",
-    "CA" to "Canada", "KY" to "Cayman Islands", "CL" to "Chile", "CO" to "Colombia",
-    "CR" to "Costa Rica", "HR" to "Croatia", "CY" to "Cyprus", "CZ" to "Czech Republic",
-    "DK" to "Denmark", "DO" to "Dominican Republic", "EC" to "Ecuador", "EG" to "Egypt",
-    "SV" to "El Salvador", "EE" to "Estonia", "FK" to "Falkland Islands", "FO" to "Faroe Islands",
-    "FI" to "Finland", "FR" to "France", "GF" to "French Guiana", "PF" to "French Polynesia",
-    "GE" to "Georgia", "DE" to "Germany", "GH" to "Ghana", "GI" to "Gibraltar",
-    "GR" to "Greece", "GL" to "Greenland", "GP" to "Guadeloupe", "GU" to "Guam",
-    "GT" to "Guatemala", "HN" to "Honduras", "HK" to "Hong Kong", "HU" to "Hungary",
-    "IS" to "Iceland", "IN" to "India", "ID" to "Indonesia", "IQ" to "Iraq",
-    "IE" to "Ireland", "IL" to "Israel", "IT" to "Italy", "JM" to "Jamaica",
-    "JP" to "Japan", "JO" to "Jordan", "KZ" to "Kazakhstan", "KE" to "Kenya",
-    "KW" to "Kuwait", "LA" to "Laos", "LV" to "Latvia", "LB" to "Lebanon",
-    "LY" to "Libya", "LI" to "Liechtenstein", "LT" to "Lithuania", "LU" to "Luxembourg",
-    "MY" to "Malaysia", "MT" to "Malta", "MQ" to "Martinique", "YT" to "Mayotte",
-    "MX" to "Mexico", "MD" to "Moldova", "ME" to "Montenegro", "MS" to "Montserrat",
-    "MA" to "Morocco", "NP" to "Nepal", "NL" to "Netherlands", "NC" to "New Caledonia",
-    "NZ" to "New Zealand", "NI" to "Nicaragua", "NG" to "Nigeria", "NF" to "Norfolk Island",
-    "MP" to "Northern Mariana Islands", "NO" to "Norway", "OM" to "Oman", "PK" to "Pakistan",
-    "PA" to "Panama", "PG" to "Papua New Guinea", "PY" to "Paraguay", "PE" to "Peru",
-    "PH" to "Philippines", "PL" to "Poland", "PT" to "Portugal", "PR" to "Puerto Rico",
-    "QA" to "Qatar", "RE" to "Reunion", "RO" to "Romania", "RU" to "Russia",
-    "SH" to "Saint Helena", "PM" to "Saint Pierre and Miquelon", "SA" to "Saudi Arabia", "SN" to "Senegal",
-    "RS" to "Serbia", "SG" to "Singapore", "SK" to "Slovakia", "SI" to "Slovenia",
-    "ZA" to "South Africa", "KR" to "South Korea", "ES" to "Spain", "LK" to "Sri Lanka",
-    "SJ" to "Svalbard and Jan Mayen", "SE" to "Sweden", "CH" to "Switzerland", "TW" to "Taiwan",
-    "TZ" to "Tanzania", "TH" to "Thailand", "TN" to "Tunisia", "TR" to "Turkey",
-    "TC" to "Turks and Caicos Islands", "UG" to "Uganda", "UA" to "Ukraine", "AE" to "United Arab Emirates",
-    "GB" to "United Kingdom", "US" to "United States", "VI" to "U.S. Virgin Islands", "UY" to "Uruguay",
-    "VE" to "Venezuela", "VN" to "Vietnam"
-).toList().sortedBy { it.second }.toMap()
 
 private fun getThemeNameRes(theme: ThemeMode): Int {
     return when (theme) {
