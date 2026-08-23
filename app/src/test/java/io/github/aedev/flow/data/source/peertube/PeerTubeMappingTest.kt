@@ -27,6 +27,7 @@ class PeerTubeMappingTest {
         duration = 630,
         publishedAt = "2024-03-15T10:30:00.000Z",
         views = 4242,
+        likes = 17,
         channel = channel,
     )
 
@@ -103,8 +104,17 @@ class PeerTubeMappingTest {
         assertThat(video.title).isEqualTo("A video")
         assertThat(video.duration).isEqualTo(630)
         assertThat(video.viewCount).isEqualTo(4242L)
+        assertThat(video.likeCount).isEqualTo(17L)
         assertThat(video.channelName).isEqualTo("Some Channel")
         assertThat(video.description).isEqualTo("desc")
+    }
+
+    @Test
+    fun `an instance that reports no likes maps to none`() {
+        // Not every instance has likes switched on, and older ones do not send the field at all.
+        val video = dto().copy(likes = 0).toVideo(instance)
+
+        assertThat(video.likeCount).isEqualTo(0L)
     }
 
     @Test

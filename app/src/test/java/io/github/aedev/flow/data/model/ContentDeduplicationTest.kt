@@ -1,5 +1,6 @@
 package io.github.aedev.flow.data.model
 
+import com.google.common.truth.Truth.assertThat
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertSame
@@ -102,4 +103,25 @@ class ContentDeduplicationTest {
         val id: String,
         val value: String
     )
+
+    @Test
+    fun `a list with nothing to remove is handed back unchanged`() {
+        // The common case on the home feed: no duplicates, so no copy should be allocated at all.
+        val items = listOf(Keyed("a"), Keyed("b"), Keyed("c"))
+
+        assertThat(items.distinctByNonBlankKeyOrSelf(Keyed::key)).isSameInstanceAs(items)
+    }
+
+    @Test
+    fun `a duplicate or a blank key still produces a filtered copy`() {
+        val withDuplicate = listOf(Keyed("a"), Keyed("b"), Keyed("a"))
+        val withBlank = listOf(Keyed("a"), Keyed(""), Keyed("b"))
+
+        assertThat(withDuplicate.distinctByNonBlankKeyOrSelf(Keyed::key).map { it.key })
+            .containsExactly("a", "b").inOrder()
+        assertThat(withBlank.distinctByNonBlankKeyOrSelf(Keyed::key).map { it.key })
+            .containsExactly("a", "b").inOrder()
+    }
+
+    private data class Keyed(val key: String)
 }

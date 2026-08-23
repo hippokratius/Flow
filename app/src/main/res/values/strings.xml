@@ -511,7 +511,7 @@
     <string name="settings_item_buffer_subtitle">Configure video buffering behavior</string>
     <string name="settings_item_downloads">Download Settings</string>
     <string name="settings_item_downloads_subtitle">Performance, Storage, Threads</string>
-    <string name="settings_item_region">Trending Region</string>
+    <string name="settings_item_region">Content Region</string>
     <string name="settings_item_search_history">Search &amp; History</string>
     <string name="settings_item_search_history_subtitle">Clear history, manage suggestions</string>
     <string name="settings_item_time_management">Time Management</string>

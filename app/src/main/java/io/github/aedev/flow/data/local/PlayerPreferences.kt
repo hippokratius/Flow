@@ -10,9 +10,13 @@ import io.github.aedev.flow.network.AppProxyType
 import io.github.aedev.flow.ui.components.SubtitleStyle
 import io.github.aedev.flow.utils.DateContextMode
 import io.github.aedev.flow.utils.DateDisplayMode
+import io.github.aedev.flow.utils.DateDisplaySettings
 import io.github.aedev.flow.utils.DateFormatStyle
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
+import io.github.aedev.flow.utils.ContentLocale
+import io.github.aedev.flow.utils.resolveContentRegion
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 
 internal fun resolveMigratedHideWatchedPreference(
@@ -321,11 +325,11 @@ class PlayerPreferences(context: Context) {
         val SHORTS_PLAYBACK_SPEED = floatPreferencesKey("shorts_playback_speed")
 
         // Date & time display
-        val DATE_DISPLAY_MODE = stringPreferencesKey("date_display_mode")
-        val DATE_FORMAT_STYLE = stringPreferencesKey("date_format_style")
-        val DATE_MODE_LISTS = stringPreferencesKey("date_mode_lists")
-        val DATE_MODE_WATCH = stringPreferencesKey("date_mode_watch")
-        val DATE_MODE_DESCRIPTION = stringPreferencesKey("date_mode_description")
+        val DATE_DISPLAY_MODE = DatePreferenceKeys.DISPLAY_MODE
+        val DATE_FORMAT_STYLE = DatePreferenceKeys.FORMAT_STYLE
+        val DATE_MODE_LISTS = DatePreferenceKeys.MODE_LISTS
+        val DATE_MODE_WATCH = DatePreferenceKeys.MODE_WATCH
+        val DATE_MODE_DESCRIPTION = DatePreferenceKeys.MODE_DESCRIPTION
     }
     
     // Grid item size preference
@@ -389,6 +393,18 @@ class PlayerPreferences(context: Context) {
         .map { DateContextMode.fromString(it[Keys.DATE_MODE_WATCH]) }
     val dateModeDescription: Flow<DateContextMode> = context.playerPreferencesDataStore.data
         .map { DateContextMode.fromString(it[Keys.DATE_MODE_DESCRIPTION]) }
+
+    /**
+     * All five date settings from one read of the preferences.
+     *
+     * Every feed card used to collect the five flows above individually, so one card cost five
+     * collectors and five initial-value flips — and DataStore re-emits on *any* write to the file,
+     * whatever key it touched, so an unrelated setting woke all of them. `distinctUntilChanged`
+     * is what makes that write silent when nothing here actually changed.
+     */
+    val dateDisplaySettings: Flow<DateDisplaySettings> = context.playerPreferencesDataStore.data
+        .map { it.toDateDisplaySettings() }
+        .distinctUntilChanged()
 
     suspend fun setDateModeLists(mode: DateContextMode) {
         context.playerPreferencesDataStore.edit { it[Keys.DATE_MODE_LISTS] = mode.name }
@@ -824,9 +840,19 @@ class PlayerPreferences(context: Context) {
             preferences[Keys.RELATED_CARD_STYLE] = style.name
         }
     }
+    /**
+     * The region every YouTube request carries.
+     *
+     * An absent key means the user never opened the picker, not that they chose the United States,
+     * so their device's own country answers — a hardcoded "US" default is how a German phone ended
+     * up with American trending videos out of the box.
+     */
     val trendingRegion: Flow<String> = context.playerPreferencesDataStore.data
         .map { preferences ->
-            preferences[Keys.TRENDING_REGION] ?: "US"
+            // Resolved rather than passed through: a stored value naming a country YouTube has no
+            // feed for would otherwise reach the extractor while the rest of the app used the
+            // fallback, which is the split this whole setting exists to avoid.
+            resolveContentRegion(preferences[Keys.TRENDING_REGION], ContentLocale.deviceRegion())
         }
     
     suspend fun setTrendingRegion(region: String) {
@@ -2651,4 +2677,24 @@ enum class WatchedThreshold(val minPercent: Float, val maxRemainingMs: Long) {
     }
 }
 
+/** Where the date preferences are keyed, so the pure mapper below can reach them too. */
+internal object DatePreferenceKeys {
+    val DISPLAY_MODE = stringPreferencesKey("date_display_mode")
+    val FORMAT_STYLE = stringPreferencesKey("date_format_style")
+    val MODE_LISTS = stringPreferencesKey("date_mode_lists")
+    val MODE_WATCH = stringPreferencesKey("date_mode_watch")
+    val MODE_DESCRIPTION = stringPreferencesKey("date_mode_description")
+}
 
+/**
+ * The five stored date preferences as one value. Pure, so it can be tested without Android — and a
+ * typo in one of these keys would silently reset someone's date format, which is exactly the kind
+ * of thing a test should catch.
+ */
+internal fun Preferences.toDateDisplaySettings(): DateDisplaySettings = DateDisplaySettings(
+    globalMode = DateDisplayMode.fromString(this[DatePreferenceKeys.DISPLAY_MODE]),
+    formatStyle = DateFormatStyle.fromString(this[DatePreferenceKeys.FORMAT_STYLE]),
+    listsMode = DateContextMode.fromString(this[DatePreferenceKeys.MODE_LISTS]),
+    watchMode = DateContextMode.fromString(this[DatePreferenceKeys.MODE_WATCH]),
+    descriptionMode = DateContextMode.fromString(this[DatePreferenceKeys.MODE_DESCRIPTION]),
+)

@@ -5,6 +5,7 @@ import androidx.room.Index
 import androidx.room.PrimaryKey
 import io.github.aedev.flow.data.local.VideoHistoryEntry
 import io.github.aedev.flow.data.model.Video
+import io.github.aedev.flow.data.source.ContentId
 
 /**
  * Room entity that replaces the previous DataStore-based watch history.
@@ -52,17 +53,25 @@ data class WatchHistoryEntity(
     )
 
     /** Reconstruct a lightweight [Video] from history metadata (no stream info). */
-    fun toVideo() = Video(
-        id = videoId,
-        title = title,
-        channelName = channelName,
-        channelId = channelId,
-        thumbnailUrl = thumbnailUrl,
-        duration = if (duration > 0) (duration / 1000).toInt() else 0,
-        viewCount = 0,
-        uploadDate = "",
-        isShort = isShort
-    )
+    fun toVideo(): Video {
+        // Recomputed from the id rather than stored, as in [VideoEntity.toDomain]. Without it a
+        // restored federated video claims to be a YouTube one, and everything that dispatches on
+        // the source — the badge, the Fediverse actions, the player's own load path — believes it.
+        val contentId = ContentId(videoId)
+        return Video(
+            id = videoId,
+            title = title,
+            channelName = channelName,
+            channelId = channelId,
+            thumbnailUrl = thumbnailUrl,
+            duration = if (duration > 0) (duration / 1000).toInt() else 0,
+            viewCount = 0,
+            uploadDate = "",
+            isShort = isShort,
+            source = contentId.kind,
+            instanceHost = contentId.instanceHost
+        )
+    }
 
     companion object {
         fun fromDomain(entry: VideoHistoryEntry) = WatchHistoryEntity(

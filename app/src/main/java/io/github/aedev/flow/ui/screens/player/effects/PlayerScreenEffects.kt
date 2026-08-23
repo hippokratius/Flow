@@ -18,6 +18,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.LifecycleOwner
 import io.github.aedev.flow.data.model.Video
+import io.github.aedev.flow.player.PlayerTitlePolicy
 import io.github.aedev.flow.player.EnhancedPlayerManager
 import io.github.aedev.flow.player.error.PlayerDiagnostics
 import io.github.aedev.flow.player.state.EnhancedPlayerState
@@ -55,6 +56,20 @@ private var liveDisplayLastSeekAtMs: Long = 0L
 
 private fun VideoPlayerUiState.isCurrentLiveStream(): Boolean =
     streamInfo?.streamType == StreamType.LIVE_STREAM || !hlsUrl.isNullOrEmpty()
+
+/**
+ * The title to write into the watch history.
+ *
+ * Through the same policy the player shows, minus DeArrow — a rewritten thumbnail title is a display
+ * preference, and the history should keep the video's own name. What it does rule out is the
+ * English-pinned extraction answer, which this used to persist: it runs every ten seconds while
+ * playing and replaces the row each time.
+ */
+private fun resolveHistoryTitle(video: Video, extractedName: String?): String =
+    PlayerTitlePolicy.resolveDisplayTitle(
+        localizedTitle = extractedName,
+        cachedTitle = video.title,
+    )
 
 private fun resolveHistoryChannelName(video: Video, extractedName: String?): String {
     val cachedName = video.channelName
@@ -364,7 +379,7 @@ fun WatchProgressSaveEffect(
         val thumbnailUrl = streamInfo?.thumbnails?.maxByOrNull { it.height }?.url
             ?: video.thumbnailUrl.takeIf { it.isNotEmpty() }
             ?: "https://i.ytimg.com/vi/$videoId/hq720.jpg"
-        val title = streamInfo?.name ?: video.title
+        val title = resolveHistoryTitle(video, streamInfo?.name)
         val durationMs = currentDurProvider()
         if (title.isNotEmpty() && durationMs > 0) {
             viewModel.savePlaybackPosition(
@@ -390,7 +405,7 @@ fun WatchProgressSaveEffect(
             val thumbnailUrl = streamInfo?.thumbnails?.maxByOrNull { it.height }?.url
                 ?: video.thumbnailUrl.takeIf { it.isNotEmpty() }
                 ?: "https://i.ytimg.com/vi/$videoId/hq720.jpg"
-            val title = streamInfo?.name ?: video.title
+            val title = resolveHistoryTitle(video, streamInfo?.name)
             val durationMs = currentDurProvider()
             if (durationMs > 0 && title.isNotEmpty()) {
                 viewModel.savePlaybackPosition(
@@ -742,7 +757,7 @@ fun VideoCleanupEffect(
         if (belongsToVideo) {
             lastKnownPosition = currentPosition
             lastKnownDuration = duration
-            lastKnownTitle = streamInfo?.name ?: video.title
+            lastKnownTitle = resolveHistoryTitle(video, streamInfo?.name)
             lastKnownThumbnail = streamInfo?.thumbnails?.maxByOrNull { it.height }?.url
                 ?: video.thumbnailUrl.takeIf { it.isNotEmpty() }
                 ?: "https://i.ytimg.com/vi/$videoId/hq720.jpg"

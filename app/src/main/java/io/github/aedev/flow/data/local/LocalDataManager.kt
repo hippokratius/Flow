@@ -36,7 +36,6 @@ class LocalDataManager @Inject constructor(@ApplicationContext private val conte
         private val VIDEO_QUALITY_WIFI = stringPreferencesKey("quality_wifi")
         private val VIDEO_QUALITY_CELLULAR = stringPreferencesKey("quality_cellular")
         private val BACKGROUND_PLAY = stringPreferencesKey("background_play")
-        private val TRENDING_REGION = stringPreferencesKey("trending_region")
         private val LAST_UPDATE_CHECK = stringPreferencesKey("last_update_check")
         private val BEDTIME_REMINDER = androidx.datastore.preferences.core.booleanPreferencesKey("bedtime_reminder")
         private val BEDTIME_START_HOUR = androidx.datastore.preferences.core.intPreferencesKey("bedtime_start_hour")
@@ -321,17 +320,6 @@ class LocalDataManager @Inject constructor(@ApplicationContext private val conte
     suspend fun clearSearchHistory() {
         context.dataStore.edit { prefs ->
             prefs[SEARCH_HISTORY] = emptySet()
-        }
-    }
-
-    // Settings
-    val trendingRegion: Flow<String> = context.dataStore.data.map { prefs ->
-        prefs[TRENDING_REGION] ?: "US"
-    }
-
-    suspend fun setTrendingRegion(region: String) {
-        context.dataStore.edit { prefs ->
-            prefs[TRENDING_REGION] = region
         }
     }
 

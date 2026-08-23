@@ -8,6 +8,8 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import io.github.aedev.flow.R
 import io.github.aedev.flow.data.local.PlayerPreferences
 import io.github.aedev.flow.data.model.Video
+import io.github.aedev.flow.ui.components.FeedInvalidationBus
+import io.github.aedev.flow.utils.ContentLocale
 import io.github.aedev.flow.data.model.distinctByNonBlankKey
 import io.github.aedev.flow.data.repository.YouTubeRepository
 import io.github.aedev.flow.data.repository.YouTubeRepository.TrendingCategory
@@ -47,7 +49,7 @@ class CategoriesViewModel @Inject constructor(
     val uiState: StateFlow<CategoriesUiState> = _uiState.asStateFlow()
 
     val trendingRegion: StateFlow<String> = preferences.trendingRegion
-        .stateIn(viewModelScope, SharingStarted.Eagerly, "US")
+        .stateIn(viewModelScope, SharingStarted.Eagerly, ContentLocale.snapshot().gl)
 
     val showRegionPickerInExplore: StateFlow<Boolean> = preferences.showRegionPickerInExplore
         .stateIn(viewModelScope, SharingStarted.Eagerly, true)
@@ -62,6 +64,17 @@ class CategoriesViewModel @Inject constructor(
             _uiState.update { it.copy(isListView = savedIsListView) }
         }
         loadCategory(TrendingCategory.ALL)
+
+        // Not only the picker in this screen's own top bar: the region can just as well be changed
+        // in Settings, and these lists describe a country either way.
+        viewModelScope.launch {
+            FeedInvalidationBus.events.collect { event ->
+                if (event is FeedInvalidationBus.Event.ContentRegionChanged) {
+                    cache.clear()
+                    loadCategory(_uiState.value.selectedCategory)
+                }
+            }
+        }
     }
 
     fun selectCategory(category: TrendingCategory) {
@@ -173,10 +186,8 @@ class CategoriesViewModel @Inject constructor(
     }
 
     fun setRegion(region: String) {
-        viewModelScope.launch {
-            preferences.setTrendingRegion(region)
-            cache.clear()
-            loadCategory(_uiState.value.selectedCategory)
-        }
+        // Writing the preference is the whole job: the collector above reloads this screen, and the
+        // same event clears the home feed's caches, which this used to leave stale.
+        viewModelScope.launch { preferences.setTrendingRegion(region) }
     }
 }

@@ -21,7 +21,9 @@ import io.github.aedev.flow.data.source.SourceCursor
 import io.github.aedev.flow.data.source.SourceError
 import io.github.aedev.flow.data.source.SourceKind
 import io.github.aedev.flow.data.source.SourcePage
+import io.github.aedev.flow.data.source.isTruncatedDescription
 import io.github.aedev.flow.data.source.watchUrl
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.supervisorScope
@@ -64,11 +66,32 @@ class PeerTubeContentSource @Inject constructor(
     override suspend fun video(id: ContentId): Video? {
         val host = id.instanceHost ?: return null
         val instance = instanceFor(host)
-        val detail = runCatching { api.videoDetail(instance.url, id.nativeId) }.getOrNull()
-            ?: return null
+        val detail = nullOnFailure { api.videoDetail(instance.url, id.nativeId) } ?: return null
+        val uuid = detail.uuid.ifBlank { id.nativeId }
         // The whole response, not a hand-picked subset: this is where the player gets a federated
         // video's title, channel, artwork and view count from.
-        return detail.copy(uuid = detail.uuid.ifBlank { id.nativeId }).toVideo(instance)
+        return detail
+            .copy(uuid = uuid, description = fullDescription(instance, uuid, detail.description))
+            .toVideo(instance)
+    }
+
+    /**
+     * [truncated] if that is already the whole text, the description endpoint's answer otherwise.
+     *
+     * Instances from PeerTube 6.0 on serve the full description with the video, so the extra request
+     * is made only for the ones that still cut it — and falls back to the stub rather than to nothing
+     * when it fails, since half a description beats none.
+     */
+    private suspend fun fullDescription(
+        instance: PeerTubeInstance,
+        uuid: String,
+        truncated: String?,
+    ): String? {
+        if (truncated == null || !truncated.isTruncatedDescription()) return truncated
+        return nullOnFailure { api.videoDescription(instance.url, uuid) }
+            ?.description
+            ?.takeIf { it.isNotBlank() }
+            ?: truncated
     }
 
     override suspend fun channel(id: ContentId): Channel? {
@@ -177,8 +200,7 @@ class PeerTubeContentSource @Inject constructor(
     override suspend fun resolvePlayback(id: ContentId): PlaybackSpec? {
         val host = id.instanceHost ?: return null
         val instance = instanceFor(host)
-        val detail = runCatching { api.videoDetail(instance.url, id.nativeId) }.getOrNull()
-            ?: return null
+        val detail = nullOnFailure { api.videoDetail(instance.url, id.nativeId) } ?: return null
         val stream = buildPeerTubeVideoStream(detail.streamingPlaylists, detail.files) ?: return null
 
         return PlaybackSpec(
@@ -255,6 +277,18 @@ class PeerTubeContentSource @Inject constructor(
             ?: PeerTubeInstance(id = "transient-$host", name = host, url = "https://$host")
 
     private fun SourceCursor?.offset(): Int = (this as? SourceCursor.Offset)?.start ?: 0
+
+    /**
+     * The call's result, or null when the instance could not answer.
+     *
+     * Cancellation is not an instance failing: a caller that has moved on — the player leaving a
+     * video mid-fetch — must not have its coroutine reported back as "no such video".
+     */
+    private inline fun <T> nullOnFailure(call: () -> T): T? =
+        runCatching { call() }.getOrElse { failure ->
+            if (failure is CancellationException) throw failure
+            null
+        }
 
     internal companion object {
         const val PER_INSTANCE_SLACK = 4

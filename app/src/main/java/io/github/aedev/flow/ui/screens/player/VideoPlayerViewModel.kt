@@ -18,7 +18,9 @@ import io.github.aedev.flow.data.repository.YouTubeRepository
 import io.github.aedev.flow.data.source.SourceKind
 import io.github.aedev.flow.data.source.contentId
 import io.github.aedev.flow.player.BackgroundPlaybackPolicy
+import io.github.aedev.flow.player.FederatedMetadataPolicy
 import io.github.aedev.flow.player.EnhancedPlayerManager
+import io.github.aedev.flow.player.PlayerTitlePolicy
 import io.github.aedev.flow.player.EnhancedMusicPlayerManager
 import io.github.aedev.flow.player.GlobalPlayerState
 import io.github.aedev.flow.player.MiniPlayerExpansionState
@@ -127,6 +129,23 @@ class VideoPlayerViewModel @Inject constructor(
     private var clearedUnplayableVideoId: String? = null
     private var channelMetadataJob: Job? = null
     private var channelMetadataVideoId: String? = null
+
+    /**
+     * What has been asked of a federated video's source, for that one video.
+     *
+     * Keyed by id so a different video reads as fresh with nothing to reset. The player re-enters
+     * the federated load whenever playback is not active — the reload check in the player-state
+     * collector is always armed for a source that never produces a `streamInfo` — so without this an
+     * instance that is slow, unreachable, or simply has nothing more to say would be asked again on
+     * every tick.
+     */
+    private data class FederatedEnrichment(
+        val videoId: String,
+        val enriched: Boolean = false,
+        val inFlight: Boolean = false,
+        val failures: Int = 0,
+    )
+    private var federatedEnrichment: FederatedEnrichment? = null
     private var relatedVideosJob: Job? = null
     private var relatedVideosVideoId: String? = null
     private var liveChatJob: Job? = null
@@ -515,6 +534,14 @@ class VideoPlayerViewModel @Inject constructor(
                         cachedVideo = lastVideo.toVideo(),
                         isRestoredSession = true
                     ) }
+                    // A history row is a title, a channel and a runtime. For a federated video that
+                    // is all there will ever be until its source is asked, and waiting for the user
+                    // to press play means the panel they open first shows no views, no date and no
+                    // description.
+                    val restoredId = lastVideo.videoId.contentId
+                    if (restoredId.kind == SourceKind.PEERTUBE) {
+                        launch { enrichExternalSourceVideo(restoredId, persist = false) }
+                    }
                 }
             }
         }
@@ -1207,6 +1234,9 @@ class VideoPlayerViewModel @Inject constructor(
         playbackAbandonedVideoId = null
         streamExpiryVideoId = null
         streamExpiryCount = 0
+        // An explicit retry outranks the attempt cap: whatever made the instance unreachable may be
+        // exactly what the user just fixed.
+        federatedEnrichment = null
         EnhancedPlayerManager.getInstance().clearCurrentVideo()
         _uiState.update { it.copy(error = null, errorHint = null, isLoading = true) }
         loadVideoInfo(videoId, isWifi = detectIsWifi(), forceRefresh = true)
@@ -2264,7 +2294,10 @@ class VideoPlayerViewModel @Inject constructor(
 
         val details = result.playerResponse.videoDetails
         val cached = _uiState.value.cachedVideo
-        val title = details?.title?.takeIf { it.isNotBlank() } ?: cached?.title ?: "Live"
+        val title = PlayerTitlePolicy.resolveDisplayTitle(
+            cachedTitle = cached?.title,
+            extractionTitle = details?.title,
+        ).ifBlank { "Live" }
         val channel = details?.author?.takeIf { it.isNotBlank() } ?: cached?.channelName ?: ""
         val channelId = details?.channelId?.takeIf { it.isNotBlank() } ?: cached?.channelId ?: ""
         val thumbnail = details?.thumbnail?.thumbnails?.maxByOrNull { it.height ?: 0 }?.url
@@ -2653,7 +2686,12 @@ class VideoPlayerViewModel @Inject constructor(
 
         val details = result.playerResponse.videoDetails
         val cached = _uiState.value.cachedVideo
-        val title = details?.title?.takeIf { it.isNotBlank() } ?: cached?.title ?: ""
+        // The cached title comes from a list that asked in the user's language; this response asked
+        // in English on purpose. See [PlayerTitlePolicy].
+        val title = PlayerTitlePolicy.resolveDisplayTitle(
+            cachedTitle = cached?.title,
+            extractionTitle = details?.title,
+        )
         val channel = details?.author?.takeIf { it.isNotBlank() } ?: cached?.channelName ?: ""
         val channelId = details?.channelId?.takeIf { it.isNotBlank() } ?: cached?.channelId ?: ""
         val thumbnail = details?.thumbnail?.thumbnails?.maxByOrNull { it.height ?: 0 }?.url
@@ -2885,49 +2923,89 @@ class VideoPlayerViewModel @Inject constructor(
     }
 
     /**
-     * Fills in what the player knows about a federated video.
+     * Fills in what the player knows about a federated video, by asking its source.
      *
-     * Mirrors the YouTube enrichment further up: only blank fields are replaced, so a video opened
-     * from a feed — which already carries everything — is left alone, and one opened by id gets its
-     * title, channel, runtime and view count. The runtime matters beyond the display: without it the
-     * pairing cannot even try, so the source switch depended on this too.
+     * This is the whole of it for a federated video — there is no NewPipe extraction behind it the
+     * way there is for YouTube — and what arrives in [VideoPlayerUiState.cachedVideo] depends
+     * entirely on where the video was opened from. A feed row has views and a truncated description,
+     * a watch history row restored into the mini player has neither, and a bare `player/{id}` link
+     * has nothing at all. [FederatedMetadataPolicy] decides what is missing and what to keep;
+     * [federatedEnrichment] makes sure one video costs at most one answered request.
+     *
+     * [persist] is false while restoring a session: see [saveHistoryEntry] at the call site below.
      */
-    private suspend fun enrichExternalSourceVideo(contentId: io.github.aedev.flow.data.source.ContentId) {
+    private suspend fun enrichExternalSourceVideo(
+        contentId: io.github.aedev.flow.data.source.ContentId,
+        persist: Boolean = true,
+    ) {
         val videoId = contentId.raw
-        val cached = _uiState.value.cachedVideo?.takeIf { it.id == videoId } ?: return
-        val alreadyComplete =
-            cached.title.isNotBlank() && cached.duration > 0 && cached.channelId.isNotBlank()
+        val cached = _uiState.value.cachedVideo?.takeIf { it.id == videoId }
+        val record = federatedEnrichment?.takeIf { it.videoId == videoId }
 
-        val fetched = if (alreadyComplete) {
-            null
-        } else {
-            contentSourceRegistry.forId(contentId)
-                ?.let { source -> runCatching { source.video(contentId) }.getOrNull() }
+        val shouldFetch = FederatedMetadataPolicy.shouldFetchDetail(
+            video = cached,
+            isEnriched = record?.enriched == true,
+            isInFlight = record?.inFlight == true,
+            failedAttempts = record?.failures ?: 0,
+        )
+        if (!shouldFetch) {
+            enrichExternalSourceChannel(cached)
+            return
+        }
+
+        updateFederatedEnrichment(videoId) { it.copy(inFlight = true) }
+        val fetched = try {
+            contentSourceRegistry.forId(contentId)?.let { source ->
+                runCatching { source.video(contentId) }.getOrElse { failure ->
+                    // A player that has moved on cancels this; that is not the instance failing to
+                    // answer, and counting it as one would spend an attempt on nothing.
+                    if (failure is kotlinx.coroutines.CancellationException) throw failure
+                    null
+                }
+            }
+        } finally {
+            updateFederatedEnrichment(videoId) { it.copy(inFlight = false) }
         }
 
         if (fetched != null) withContext(Dispatchers.Main) {
-            val current = _uiState.value.cachedVideo?.takeIf { it.id == videoId } ?: return@withContext
-            val enriched = current.copy(
-                title = current.title.ifBlank { fetched.title },
-                channelName = current.channelName.ifBlank { fetched.channelName },
-                channelId = current.channelId.ifBlank { fetched.channelId },
-                channelThumbnailUrl = current.channelThumbnailUrl.ifBlank { fetched.channelThumbnailUrl },
-                thumbnailUrl = current.thumbnailUrl.ifBlank { fetched.thumbnailUrl },
-                duration = current.duration.takeIf { it > 0 } ?: fetched.duration,
-                viewCount = current.viewCount.takeIf { it > 0L } ?: fetched.viewCount,
-                description = current.description.ifBlank { fetched.description },
-                timestamp = current.timestamp.takeIf { it > 0L } ?: fetched.timestamp,
-                uploadDate = current.uploadDate.ifBlank { fetched.uploadDate },
-                source = fetched.source,
-                instanceHost = current.instanceHost ?: fetched.instanceHost,
-            )
-            if (enriched == current) return@withContext
-            GlobalPlayerState.setCurrentVideo(enriched)
-            _uiState.update { it.copy(cachedVideo = enriched) }
-            saveHistoryEntry(enriched)
+            // This video is answered for. Some federated videos are legitimately missing what the
+            // policy asks for — a fresh upload has no views, plenty have no description — so the
+            // field test alone would never settle and the player would ask again on every reload.
+            updateFederatedEnrichment(videoId) { it.copy(enriched = true, failures = 0) }
+
+            // Merged inside the update rather than from a value read beforehand: the playback
+            // collectors write this same field, and one of the two writes would otherwise be lost.
+            var enriched: Video? = null
+            _uiState.update { state ->
+                val current = state.cachedVideo?.takeIf { it.id == videoId } ?: return@update state
+                val merged = FederatedMetadataPolicy.merge(current, fetched)
+                if (merged == current) return@update state
+                enriched = merged
+                state.copy(cachedVideo = merged)
+            }
+
+            enriched?.let { merged ->
+                GlobalPlayerState.setCurrentVideo(merged)
+                // Not while restoring a session: touching the history entry stamps it with the
+                // current time, which would reorder "continue watching" around a video the user has
+                // not played yet.
+                if (persist) saveHistoryEntry(merged)
+            }
+        } else {
+            updateFederatedEnrichment(videoId) { it.copy(failures = it.failures + 1) }
         }
 
         enrichExternalSourceChannel(_uiState.value.cachedVideo?.takeIf { it.id == videoId })
+    }
+
+    /** Applies [transform] to [videoId]'s record, unless a newer video has taken the slot. */
+    private fun updateFederatedEnrichment(
+        videoId: String,
+        transform: (FederatedEnrichment) -> FederatedEnrichment,
+    ) {
+        val slot = federatedEnrichment
+        if (slot != null && slot.videoId != videoId) return
+        federatedEnrichment = transform(slot ?: FederatedEnrichment(videoId))
     }
 
     /**

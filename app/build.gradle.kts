@@ -155,6 +155,22 @@ android {
 
     kotlinOptions {
         jvmTarget = "17"
+
+        // Opt-in: ./gradlew :app:assembleGithubDebug -PcomposeMetrics=true
+        //
+        // The reports are the only deterministic way to tell whether a composable actually skips.
+        // "restartable skippable fun VideoCardFullWidth" and "stable class Video" in
+        // build/compose_reports are what a feed that does not recompose while scrolling looks like
+        // from the outside; everything else about stability is unfalsifiable by eye.
+        if (project.findProperty("composeMetrics") == "true") {
+            val reportDir = layout.buildDirectory.get().asFile.absolutePath
+            freeCompilerArgs += listOf(
+                "-P",
+                "plugin:androidx.compose.compiler.plugins.kotlin:reportsDestination=$reportDir/compose_reports",
+                "-P",
+                "plugin:androidx.compose.compiler.plugins.kotlin:metricsDestination=$reportDir/compose_metrics",
+            )
+        }
     }
 
     buildFeatures {

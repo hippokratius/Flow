@@ -55,6 +55,7 @@ fun PTVideoDto.toVideo(instance: PeerTubeInstance): Video {
         thumbnailUrl = thumbnail,
         duration = duration.toInt(),
         viewCount = views,
+        likeCount = likes,
         // Handed over raw: DateDisplay.parseToTimestamp already understands ISO 8601, which is what
         // PeerTube emits, so the app's own relative/exact date settings apply unchanged.
         uploadDate = publishedAt.orEmpty(),

@@ -252,9 +252,12 @@ class FlowNeuroEngine(private val appContext: Context) {
     // PUBLIC API
     // =================================================
 
-    suspend fun initialize() {
+    // The load reads DataStore and then walks up to a couple of thousand history entries plus the
+    // IDF map. Several of the seven callers launch this without a dispatcher, so it is pinned here
+    // rather than at each call site — one of them is the home feed's own init, on the main thread.
+    suspend fun initialize() = withContext(Dispatchers.IO) {
         brainMutex.withLock {
-            if (isInitialized) return
+            if (isInitialized) return@withLock
 
             val loaded = storage.load()
             if (loaded != null) {
@@ -998,9 +1001,7 @@ class FlowNeuroEngine(private val appContext: Context) {
                         }
                     }
             } else {
-                val preferred = brain.preferredTopics.toList()
-                if (preferred.isNotEmpty()) preferred.shuffled().take(5)
-                else listOf("Music", "Science", "Technology", "Education", "Nature")
+                coldStartQueries(brain.preferredTopics, blocked)
             }
 
             // ── Query rotation: filter queries too similar to recently used ones ──
@@ -1240,8 +1241,10 @@ class FlowNeuroEngine(private val appContext: Context) {
 
     }
 
-    suspend fun recordFeedImpressions(ids: List<String>) {
-        if (ids.isEmpty()) return
+    // withContext outside the lock, never inside: a dispatcher hop while holding brainMutex would
+    // stretch the critical section and serialise every other caller behind a thread handoff.
+    suspend fun recordFeedImpressions(ids: List<String>) = withContext(Dispatchers.Default) {
+        if (ids.isEmpty()) return@withContext
         val now = System.currentTimeMillis()
 
         brainMutex.withLock {
@@ -1780,4 +1783,24 @@ class FlowNeuroEngine(private val appContext: Context) {
         }
     }
 
+}
+
+/**
+ * What the discovery lane should search for when the engine has nothing to go on yet.
+ *
+ * Nothing, deliberately. This is reached on a fresh install, where it used to answer with five
+ * English words — "Music", "Science", "Technology" — and YouTube answers an English query with
+ * English videos whatever region the request carries. Those five searches were a third of the home
+ * feed for someone who had not watched anything yet, which is precisely when the feed is judged.
+ * Leaving the slots to the region's own trending is the better answer, and the lane fills itself as
+ * soon as there is one watched video to learn from.
+ *
+ * Top-level so it can be tested: the engine itself needs a Context and a singleton to exist.
+ */
+internal fun coldStartQueries(preferredTopics: Set<String>, blocked: Set<String>): List<String> {
+    if (preferredTopics.isEmpty()) return emptyList()
+    return preferredTopics
+        .filterNot { topic -> blocked.any { topic.lowercase().contains(it) } }
+        .shuffled()
+        .take(5)
 }

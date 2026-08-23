@@ -15,8 +15,6 @@ import io.github.aedev.flow.network.AppProxyManager
 import io.github.aedev.flow.utils.FlowCrashHandler
 import io.github.aedev.flow.utils.PerformanceDispatcher
 import org.schabi.newpipe.extractor.NewPipe
-import org.schabi.newpipe.extractor.localization.ContentCountry
-import org.schabi.newpipe.extractor.localization.Localization
 
 import dagger.hilt.android.HiltAndroidApp
 import coil.ImageLoader
@@ -28,6 +26,11 @@ import org.conscrypt.Conscrypt
 import io.github.aedev.flow.innertube.YouTube
 import io.github.aedev.flow.innertube.pages.NewPipeExtractor
 import io.github.aedev.flow.utils.AppLanguageManager
+import io.github.aedev.flow.data.local.HomeFeedCacheRepository
+import io.github.aedev.flow.ui.components.FeedInvalidationBus
+import io.github.aedev.flow.ui.screens.home.HomeFeedCache
+import io.github.aedev.flow.utils.ContentLocale
+import io.github.aedev.flow.utils.resolveContentLocale
 import io.github.aedev.flow.utils.potoken.NewPipePoTokenProvider
 import io.github.aedev.flow.discord.DiscordPresenceRuntime
 import kotlinx.coroutines.CoroutineScope
@@ -35,8 +38,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
-import io.github.aedev.flow.innertube.models.YouTubeLocale
-import io.github.aedev.flow.innertube.models.normalizeYouTubeHostLanguage
+import kotlinx.coroutines.flow.distinctUntilChanged
 import java.util.Locale
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
@@ -83,15 +85,16 @@ class FlowApplication : Application(), ImageLoaderFactory {
         // Install crash handler for real-time monitoring
         FlowCrashHandler.install(this)
         
+        // Before anything can ask YouTube a question. The stored pair is mirrored outside DataStore
+        // precisely so the first request of the process already carries it, rather than a hardcoded
+        // country that the preference collector further down would correct a moment too late.
+        ContentLocale.seed(this)
+
         try {
-            val country = ContentCountry("US")
-            // The device language rather than a hardcoded "en": a channel that publishes
-            // multi-language metadata should reach the user in their own. The stored preference is
-            // applied a moment later, once DataStore has answered — see below.
-            val localization = io.github.aedev.flow.utils.extractorLocalization("system")
-            NewPipe.init(NewPipeDownloader.getInstance(this), localization, country)
+            ContentLocale.applyTo(NewPipeDownloader.getInstance(this))
             YoutubeStreamExtractor.setPoTokenProvider(NewPipePoTokenProvider)
-            Log.d(TAG, "NewPipe initialized with language ${localization.languageCode}")
+            val seeded = ContentLocale.snapshot()
+            Log.d(TAG, "NewPipe initialized with gl=${seeded.gl}, hl=${seeded.hl}")
         } catch (e: Exception) {
             // Log error but don't crash the app
             Log.e(TAG, "Failed to initialize NewPipe", e)
@@ -177,55 +180,53 @@ class FlowApplication : Application(), ImageLoaderFactory {
             }
         }
 
+        // One collector for both halves of the answer, in one order. Split in two, the cache
+        // invalidation could run — and the feed reload it triggers could go out — before the new
+        // country had reached the clients, refilling the caches it had just cleared with the old
+        // region's videos.
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+            var lastRegion: String? = null
             combine(
                 playerPreferences.appLanguage,
                 playerPreferences.trendingRegion
             ) { lang, region ->
-                val glCode = normalizeYouTubeCountry(region)
-                val hlCode = normalizeYouTubeHostLanguage(lang)
-                YouTubeLocale(gl = glCode, hl = hlCode)
-            }.collectLatest { newLocale ->
-                YouTube.locale = newLocale
-                // The extractor follows the same setting. Without this it kept answering in English
-                // while InnerTube answered in the user's language — one app, two languages.
+                resolveContentLocale(
+                    storedRegion = region,
+                    appLanguageTag = lang,
+                    deviceCountry = ContentLocale.deviceRegion(),
+                    deviceLanguageTag = Locale.getDefault().toLanguageTag(),
+                )
+            }.distinctUntilChanged().collectLatest { newLocale ->
+                // The extractor followed the setting only for the language, and InnerTube only
+                // until something else reassigned its locale.
+                ContentLocale.apply(newLocale)
                 runCatching {
-                    NewPipe.init(
-                        NewPipe.getDownloader(),
-                        Localization(newLocale.hl),
-                        ContentCountry(newLocale.gl),
-                    )
+                    ContentLocale.applyTo(NewPipe.getDownloader())
                 }.onFailure { Log.w(TAG, "Could not apply locale to the extractor", it) }
                 Log.d(TAG, "Dynamic YouTube Locale updated: gl=${newLocale.gl}, hl=${newLocale.hl}")
-            }
-        }
 
-        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
-            var lastRegion: String? = null
-            playerPreferences.trendingRegion.collectLatest { region ->
-                if (lastRegion != null && lastRegion != region) {
-                    Log.d(TAG, "Trending region changed from $lastRegion to $region. Invalidate visitor data.")
-                    val prefs = getSharedPreferences("flow_prefs", MODE_PRIVATE)
-                    prefs.edit()
-                        .remove(VISITOR_DATA_KEY)
-                        .remove(VISITOR_DATA_FETCHED_AT_KEY)
-                        .apply()
-                    YouTube.visitorData = null
-                    
-                    YouTube.visitorData().onSuccess { data ->
-                        if (!data.isNullOrEmpty()) {
-                            prefs.edit()
-                                .putString(VISITOR_DATA_KEY, data)
-                                .putLong(VISITOR_DATA_FETCHED_AT_KEY, System.currentTimeMillis())
-                                .apply()
-                            YouTube.visitorData = data
-                            Log.d(TAG, "Fresh visitorData fetched for region: $region")
-                        }
-                    }.onFailure { e ->
-                        Log.w(TAG, "Failed to fetch fresh visitorData: ${e.message}")
-                    }
-                }
-                lastRegion = region
+                val previousRegion = lastRegion
+                lastRegion = newLocale.gl
+                if (previousRegion == null || previousRegion == newLocale.gl) return@collectLatest
+
+                Log.d(TAG, "Content region changed from $previousRegion to ${newLocale.gl}.")
+
+                // Every list on screen and in the caches describes the old country now. Cleared
+                // here rather than in the feed's ViewModel because that one only exists once the
+                // home screen has been composed — a region changed from Settings would otherwise
+                // leave the 8-hour rows in Room and the process-wide in-memory feed untouched, and
+                // the home feed short-circuits its entire load on the latter.
+                runCatching {
+                    HomeFeedCacheRepository(this@FlowApplication).clearAll()
+                    HomeFeedCache.clear()
+                }.onFailure { Log.w(TAG, "Could not clear the feed caches", it) }
+                FeedInvalidationBus.emit(
+                    FeedInvalidationBus.Event.ContentRegionChanged(newLocale.gl)
+                )
+
+                // Last, because it is a network round trip: which country YouTube believes the user
+                // is in is carried by this token, but nothing on screen should wait for it.
+                invalidateVisitorData(newLocale.gl)
             }
         }
 
@@ -247,24 +248,39 @@ class FlowApplication : Application(), ImageLoaderFactory {
         }
     }
 
+    /**
+     * Drops the visitor token minted for the previous region and fetches one for the new.
+     *
+     * YouTube ties a slice of what it serves to this token, so keeping it across a region change
+     * would answer the new country's requests with the old country's session.
+     */
+    private suspend fun invalidateVisitorData(region: String) {
+        val prefs = getSharedPreferences("flow_prefs", MODE_PRIVATE)
+        prefs.edit()
+            .remove(VISITOR_DATA_KEY)
+            .remove(VISITOR_DATA_FETCHED_AT_KEY)
+            .apply()
+        YouTube.visitorData = null
+
+        YouTube.visitorData().onSuccess { data ->
+            if (!data.isNullOrEmpty()) {
+                prefs.edit()
+                    .putString(VISITOR_DATA_KEY, data)
+                    .putLong(VISITOR_DATA_FETCHED_AT_KEY, System.currentTimeMillis())
+                    .apply()
+                YouTube.visitorData = data
+                Log.d(TAG, "Fresh visitorData fetched for region: $region")
+            }
+        }.onFailure { e ->
+            Log.w(TAG, "Failed to fetch fresh visitorData: ${e.message}")
+        }
+    }
+
     private fun applyProxyConfig(config: io.github.aedev.flow.network.AppProxyConfig) {
         AppProxyManager.update(config)
         YouTube.proxy = AppProxyManager.currentProxy()
         YouTube.proxyAuth = AppProxyManager.currentHttpProxyAuthorizationHeader()
         NewPipeExtractor.invalidateClient()
-    }
-
-    private fun normalizeYouTubeCountry(region: String): String {
-        val normalized = region.trim().uppercase(Locale.US)
-        return if (normalized.matches(Regex("[A-Z]{2}"))) {
-            normalized
-        } else {
-            Locale.getDefault().country
-                .trim()
-                .uppercase(Locale.US)
-                .takeIf { it.matches(Regex("[A-Z]{2}")) }
-                ?: "US"
-        }
     }
 
     override fun onTerminate() {

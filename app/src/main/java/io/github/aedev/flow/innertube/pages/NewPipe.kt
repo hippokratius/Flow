@@ -1,6 +1,7 @@
 package io.github.aedev.flow.innertube.pages
 
 import io.github.aedev.flow.innertube.YouTube
+import io.github.aedev.flow.utils.ContentLocale
 import io.github.aedev.flow.innertube.models.YouTubeClient
 import io.github.aedev.flow.innertube.models.response.PlayerResponse
 import io.ktor.http.URLBuilder
@@ -77,7 +78,11 @@ class NewPipeUtils(
     downloader: Downloader,
 ) {
     init {
-        NewPipe.init(downloader)
+        // Not the one-argument overload: it resets the extractor's country and language to the
+        // library's own defaults, and this runs on every stream-URL and signature path — so playing
+        // a single video used to make search, related and channel listings answer as en/GB for the
+        // rest of the process, whatever the user had chosen.
+        ContentLocale.applyTo(downloader)
     }
 
     fun getSignatureTimestamp(videoId: String): Result<Int> =

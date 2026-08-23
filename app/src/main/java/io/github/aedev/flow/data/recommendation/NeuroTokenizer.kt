@@ -199,7 +199,32 @@ internal class NeuroTokenizer {
         "really", "actually", "literally", "basically",
         "ever", "never", "always", "every",
         "still", "also", "too", "very", "only",
-        "then", "than", "well", "even"
+        "then", "than", "well", "even",
+        // Function words of the languages Flow ships in. With an English-only list a German title
+        // kept der, die and und as topics — and topics become search queries, so the feed went
+        // looking for videos about the word die. Words that double as English topic words (war,
+        // man, van, dos, plus) are deliberately absent: World War II must not lose its subject.
+        // German
+        "der", "die", "und", "das", "den", "dem", "des", "ein", "eine", "einen", "einem", "einer",
+        "oder", "aber", "auch", "nicht", "mit", "ohne", "von", "vom", "zum", "zur",
+        "für", "auf", "aus", "bei", "nach", "über", "unter", "wie", "wer", "wann",
+        "ist", "sind", "waren", "haben", "wird", "werden", "kann", "können",
+        "mein", "dein", "sein", "ihre", "dieser", "diese", "dieses", "alle", "alles",
+        "folge", "teil", "deutsch",
+        // Spanish / Portuguese
+        "que", "por", "con", "para", "del", "una", "como", "más",
+        "pero", "todo", "muy", "este", "esta", "esto", "sobre",
+        "não", "uma", "isso", "mais", "você", "está",
+        // French
+        "une", "sont", "pour", "avec", "sans", "dans", "sur",
+        "tout", "tous", "cette", "être", "avoir", "vous", "nous",
+        // Italian
+        "che", "sono", "questo", "questa", "più",
+        // Dutch / Scandinavian / Polish / Turkish
+        "een", "het", "voor", "niet", "zijn", "maar", "ook",
+        "och", "för", "ikke", "eller",
+        "jest", "nie", "sie", "tego", "jak", "czy",
+        "bir", "için", "daha", "çok"
     )
 
     // ── Tag Spam Filter ──

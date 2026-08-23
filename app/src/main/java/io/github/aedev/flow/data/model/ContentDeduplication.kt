@@ -15,11 +15,22 @@ internal fun <T> Iterable<T>.mergeDistinctByNonBlankKey(
     keySelector: (T) -> String
 ): List<T> = (this + incoming).distinctByNonBlankKey(keySelector)
 
+/**
+ * The list itself when every key is present and unique, a filtered copy otherwise.
+ *
+ * Scans before it builds. Duplicates are the rare case — this runs on every home-feed state
+ * emission, and the old version allocated a full result list every time only to find nothing to
+ * remove and throw the copy away.
+ */
 internal fun <T> List<T>.distinctByNonBlankKeyOrSelf(
     keySelector: (T) -> String
 ): List<T> {
-    val distinctItems = distinctByNonBlankKey(keySelector)
-    return if (distinctItems.size == size) this else distinctItems
+    val seenKeys = HashSet<String>(size)
+    for (item in this) {
+        val key = keySelector(item)
+        if (key.isBlank() || !seenKeys.add(key)) return distinctByNonBlankKey(keySelector)
+    }
+    return this
 }
 
 internal class DistinctKeyTracker {

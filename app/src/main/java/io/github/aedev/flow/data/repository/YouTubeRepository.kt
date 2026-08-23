@@ -1,6 +1,7 @@
 package io.github.aedev.flow.data.repository
 
 import io.github.aedev.flow.data.model.Video
+import io.github.aedev.flow.utils.ContentLocale
 import io.github.aedev.flow.data.model.VideoCollaborator
 import io.github.aedev.flow.utils.PerformanceDispatcher
 import android.util.Log
@@ -13,6 +14,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.withTimeoutOrNull
+import org.schabi.newpipe.extractor.Extractor
 import org.schabi.newpipe.extractor.NewPipe
 import org.schabi.newpipe.extractor.ServiceList
 import org.schabi.newpipe.extractor.stream.ContentAvailability
@@ -213,14 +215,9 @@ class YouTubeRepository @Inject constructor(
         nextPage: Page? = null
     ): Pair<List<Video>, Page?> = withContext(Dispatchers.IO) {
         try {
-            val effectiveRegion = region.ifBlank { playerPreferences.trendingRegion.first() }
-            // Update localization based on region
-            val country = ContentCountry(effectiveRegion)
-            val localization = currentExtractorLocalization()
-            NewPipe.init(NewPipe.getDownloader(), localization, country)
-
             val kioskList = service.kioskList
-            val trendingExtractor = kioskList.getExtractorById("Trending", null) as KioskExtractor<*>
+            val trendingExtractor = (kioskList.getExtractorById("Trending", null) as KioskExtractor<*>)
+                .pinnedToUserLocale(region)
             
             // FIX: ALWAYS call fetchPage to initialize the extractor state
             trendingExtractor.fetchPage()
@@ -251,7 +248,7 @@ class YouTubeRepository @Inject constructor(
     ): Pair<List<Video>, Page?> = withContext(Dispatchers.IO) {
         try {
             // Search for #shorts which often returns actual shorts
-            val searchExtractor = service.getSearchExtractor("#shorts")
+            val searchExtractor = service.getSearchExtractor("#shorts").pinnedToUserLocale()
             searchExtractor.fetchPage()
             
             // FIX: Correct Pagination Logic
@@ -282,7 +279,7 @@ class YouTubeRepository @Inject constructor(
         nextPage: Page? = null
     ): Pair<List<Video>, Page?> = withContext(Dispatchers.IO) {
         try {
-            val searchExtractor = service.getSearchExtractor(query)
+            val searchExtractor = service.getSearchExtractor(query).pinnedToUserLocale()
             searchExtractor.fetchPage()
             
             // FIX: Correct Pagination Logic
@@ -315,7 +312,7 @@ class YouTubeRepository @Inject constructor(
         nextPage: Page? = null
     ): io.github.aedev.flow.data.model.SearchResult = withContext(Dispatchers.IO) {
         try {
-            val searchExtractor = service.getSearchExtractor(query, contentFilters, "")
+            val searchExtractor = service.getSearchExtractor(query, contentFilters, "").pinnedToUserLocale()
             searchExtractor.fetchPage()
             
             // FIX: Correct Pagination Logic
@@ -509,11 +506,11 @@ class YouTubeRepository @Inject constructor(
             if (isReloadError) {
                 Log.w("YouTubeRepository", "Hit 'page needs to be reloaded' error for $videoId. Retrying with fresh state...")
 
-                // Re-init NewPipe to potentially clear internal state
+                // Re-init NewPipe to potentially clear internal state. Through ContentLocale, or
+                // this would leave the whole process pinned to the country it hardcoded — every
+                // later request, not just the retried one.
                 try {
-                     val country = ContentCountry("US")
-                     val localization = currentExtractorLocalization()
-                     NewPipe.init(NewPipe.getDownloader(), localization, country)
+                     ContentLocale.applyTo(NewPipe.getDownloader())
                 } catch (initEx: Exception) {
                      Log.e("YouTubeRepository", "Failed to re-init NewPipe", initEx)
                 }
@@ -563,6 +560,11 @@ class YouTubeRepository @Inject constructor(
                     info.uploadDate?.offsetDateTime()?.toInstant()?.toEpochMilli(),
                     info.textualUploadDate
                 ),
+                // The reason a caller asks for a single video rather than taking the one it already
+                // has from a listing: listings carry no description at all, and this is what the
+                // info panel and the description sheet read when the source switch shows the
+                // YouTube copy of a federated upload.
+                description = info.description?.content.orEmpty(),
                 channelThumbnailUrl = bestAvatar,
                 channelThumbnailUrls = avatarUrls
             )
@@ -601,7 +603,7 @@ class YouTubeRepository @Inject constructor(
             if (channelId != null && channelId.startsWith("UC")) {
                 val uploadsId = "UU" + channelId.removePrefix("UC")
                 val playlistUrl = "https://www.youtube.com/playlist?list=$uploadsId"
-                val playlistExtractor = service.getPlaylistExtractor(playlistUrl)
+                val playlistExtractor = service.getPlaylistExtractor(playlistUrl).pinnedToUserLocale()
                 playlistExtractor.fetchPage()
                 val page = playlistExtractor.initialPage
                 val items = page.items.filterIsInstance<StreamInfoItem>()
@@ -613,7 +615,7 @@ class YouTubeRepository @Inject constructor(
 
             // Fallback: attempt to use channel extractor directly (best-effort)
             val channelUrl = if (channelIdOrUrl.startsWith("http")) channelIdOrUrl else "https://www.youtube.com/channel/$channelIdOrUrl"
-            val extractor = service.getChannelExtractor(channelUrl)
+            val extractor = service.getChannelExtractor(channelUrl).pinnedToUserLocale()
             extractor.fetchPage()
             
             // Many ChannelExtractor implementations expose page items via getPage/getInitialPage; try to access a first page safely
@@ -748,7 +750,6 @@ class YouTubeRepository @Inject constructor(
         val effectiveRegion = region.ifBlank { playerPreferences.trendingRegion.first() }
         val country = ContentCountry(effectiveRegion)
         val localization = currentExtractorLocalization()
-        NewPipe.init(NewPipe.getDownloader(), localization, country)
 
         when (category) {
             TrendingCategory.ALL -> {
@@ -761,7 +762,7 @@ class YouTubeRepository @Inject constructor(
                     ).map { cat ->
                         async {
                             try {
-                                fetchKiosk(cat.kioskId, country)
+                                fetchKiosk(cat.kioskId, country, localization)
                             } catch (e: Exception) {
                                 emptyList()
                             }
@@ -771,13 +772,18 @@ class YouTubeRepository @Inject constructor(
                     interleaveRoundRobin(results)
                 }
             }
-            else -> fetchKiosk(category.kioskId, country)
+            else -> fetchKiosk(category.kioskId, country, localization)
         }
     }
 
-    private fun fetchKiosk(kioskId: String, country: ContentCountry): List<Video> {
+    private fun fetchKiosk(
+        kioskId: String,
+        country: ContentCountry,
+        localization: Localization,
+    ): List<Video> {
         val kioskList = service.kioskList
         kioskList.forceContentCountry(country)
+        kioskList.forceLocalization(localization)
         val extractor = kioskList.getExtractorById(kioskId, null) as KioskExtractor<*>
         extractor.fetchPage()
         return extractor.initialPage.items
@@ -1323,6 +1329,22 @@ class YouTubeRepository @Inject constructor(
      */
     private suspend fun currentExtractorLocalization(): Localization =
         io.github.aedev.flow.utils.extractorLocalization(playerPreferences.appLanguage.first())
+
+    /**
+     * Pins one extractor to the region and language the user chose.
+     *
+     * The alternative is what this code used to do: re-initialise NewPipe's process-global
+     * localization right before fetching and hope nothing else re-initialises it in between.
+     * Something always did — playing a video resets it, and every other repository call rides
+     * whatever was left behind. Per request, the answer cannot drift.
+     *
+     * [region] overrides the stored preference, for the callers that already know which region they
+     * are asking about.
+     */
+    private suspend fun <T : Extractor> T.pinnedToUserLocale(region: String = ""): T = apply {
+        forceLocalization(currentExtractorLocalization())
+        forceContentCountry(ContentCountry(region.ifBlank { playerPreferences.trendingRegion.first() }))
+    }
 
     private fun resolveUploadTimestamp(absoluteMillis: Long?, textualDate: String?): Long {
         absoluteMillis?.let { if (it > 0L) return it }

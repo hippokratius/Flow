@@ -118,6 +118,17 @@ class PeerTubeApi @Inject constructor(
         get("$instanceUrl/api/v1/videos/$uuid")
 
     /**
+     * The untruncated description of a video.
+     *
+     * The `description` field of a video — in the listing and in the detail response alike — is cut
+     * to 250 characters with an ellipsis appended. That is the documented shape of the field, not a
+     * quirk of one instance, and it is why a federated description used to end mid-link. The whole
+     * text lives here.
+     */
+    suspend fun videoDescription(instanceUrl: String, uuid: String): PTVideoDescriptionDto =
+        get("$instanceUrl/api/v1/videos/$uuid/description")
+
+    /**
      * Top-level comments on a video.
      *
      * Threads only. Replies live behind `/comment-threads/{threadId}`, one request per thread, which

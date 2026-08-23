@@ -37,6 +37,8 @@ data class PTVideoDto(
     val duration: Long = 0,
     val publishedAt: String? = null,
     val views: Long = 0,
+    /** Absent on instances that switched likes off, and on ones older than the field. */
+    val likes: Long = 0,
     val channel: PTChannelDto? = null,
     val tags: List<String> = emptyList(),
     val streamingPlaylists: List<PTStreamingPlaylistDto> = emptyList(),
@@ -97,6 +99,17 @@ data class PTChannelDetailDto(
     val avatars: List<PTAvatarDto> = emptyList(),
     val banner: PTAvatarDto? = null,
     val banners: List<PTAvatarDto> = emptyList(),
+)
+
+/**
+ * The whole description of a video, from `GET /api/v1/videos/{id}/description`.
+ *
+ * PeerTube cuts the `description` it puts on a video down to 250 characters and serves the rest from
+ * this endpoint — see [PeerTubeApi.videoDescription].
+ */
+@Serializable
+data class PTVideoDescriptionDto(
+    val description: String? = null,
 )
 
 /** Comment threads of `GET /api/v1/videos/{id}/comment-threads`. */

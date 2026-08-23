@@ -560,6 +560,7 @@ class HomeViewModel @Inject constructor(
     private val homePrefetchQueue = HomePrefetchQueue()
     private val homePrefetchWorkerLock = Any()
     private var homePrefetchJob: Job? = null
+    private var hydrateJob: Job? = null
 
     private var subsBacklog: List<Video> = emptyList()
 
@@ -574,6 +575,19 @@ class HomeViewModel @Inject constructor(
     private var currentQueryIndex = 0
     private val discoveryQueries = mutableListOf<String>()
     private var wave2Job: Job? = null
+    private var flowFeedJob: Job? = null
+
+    /**
+     * Which feed load owns the state right now.
+     *
+     * `cancel()` is asynchronous and `MutableStateFlow.update` does not suspend, so a replaced load
+     * keeps writing until it next suspends — the visible list, the loading flags, and both feed
+     * caches. Cancelling alone therefore does not stop it; this does. Same idiom as
+     * [HomePrefetchQueue]'s generation counter, and `@Volatile` because it is written on Main and
+     * read on the network dispatcher.
+     */
+    @Volatile
+    private var flowFeedGeneration: Int = 0
     
     private var viewHistory: ViewHistory? = null
     
@@ -681,6 +695,17 @@ class HomeViewModel @Inject constructor(
                         }
                         // Full clear — topic signals changed, discovery queries will differ
                         shortsRepository.clearCaches()
+                    }
+                    is FeedInvalidationBus.Event.ContentRegionChanged -> {
+                        // The Room rows and the in-memory feed are already gone — cleared where the
+                        // preference is watched, which happens whether or not this screen exists.
+                        // What is left is this ViewModel's own memory, the loads already in flight
+                        // for the old country, and the visible list.
+                        flowFeedJob?.cancel()
+                        hydrateJob?.cancel()
+                        relatedCache.clear()
+                        shortsRepository.clearCaches()
+                        refreshFeed()
                     }
                     is FeedInvalidationBus.Event.MarkedWatched -> {
                         HomeFeedCache.filterOut(videoId = event.videoId)
@@ -844,7 +869,10 @@ class HomeViewModel @Inject constructor(
     }
 
     private fun hydratePersistentHomeFeed() {
-        viewModelScope.launch(PerformanceDispatcher.networkIO) {
+        hydrateJob?.cancel()
+        // Tracked for the same reason as the feed load: this one ends by writing what it painted
+        // back into the cache, which must not outlive a region change.
+        hydrateJob = viewModelScope.launch(PerformanceDispatcher.networkIO) {
             val cached = runCatching {
                 persistentHomeFeedCache.loadLastFeed(cacheFilters())
             }.getOrElse { emptyList() }
@@ -890,9 +918,14 @@ class HomeViewModel @Inject constructor(
         if (_uiState.value.isLoading && !forceRefresh) return
         
         wave2Job?.cancel()
+        // Tracked, so a forced reload can cancel the one it replaces. An untracked load kept
+        // running and eventually wrote its results into both feed caches — which, after a region
+        // change, means the country the user just left being written back over the cleared rows.
+        val generation = ++flowFeedGeneration
+        flowFeedJob?.cancel()
         _uiState.update { it.copy(isLoading = true, error = null) }
         
-        viewModelScope.launch(PerformanceDispatcher.networkIO) {
+        flowFeedJob = viewModelScope.launch(PerformanceDispatcher.networkIO) {
             try {
                 discoveryQueries.clear()
                 discoveryQueries.addAll(FlowNeuroEngine.generateDiscoveryQueries())
@@ -954,7 +987,7 @@ class HomeViewModel @Inject constructor(
                                 .filterRecentHomeSuggestion(System.currentTimeMillis()),
                             userSubs
                         ).take(15)
-                        if (quickFeed.isNotEmpty()) {
+                        if (quickFeed.isNotEmpty() && generation == flowFeedGeneration) {
                             _uiState.update { state ->
                                 state.copy(
                                     videos = quickFeed.filterWatched(watchedVideoIds.value),
@@ -1125,6 +1158,10 @@ class HomeViewModel @Inject constructor(
                     cacheCandidates(FeedSource.DISCOVERY, bestDiscovery, renderedIds) +
                     cacheCandidates(FeedSource.SUBS, bestSubs, renderedIds) +
                     cacheCandidates(FeedSource.VIRAL, bestViral, renderedIds)
+                // A load that has been replaced writes nothing further: not the list, not the
+                // loading flags — a stale "isRefreshing = false" kills the new load's spinner —
+                // and above all not the caches, which is what cancelling was supposed to prevent.
+                if (generation != flowFeedGeneration) return@launch
                 var visibleFeed = emptyList<Video>()
                 _uiState.update { state ->
                     visibleFeed = spacedMix.filterWatched(watchedVideoIds.value)
@@ -1203,6 +1240,16 @@ class HomeViewModel @Inject constructor(
                 }
                 requestOptimisticHomePrefetch()
                 
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                // A cancelled load is usually a load that was replaced — by a refresh, or by the
+                // region changing under it — and the successor owns the flags. Reporting it as a
+                // failure would flash an error and start a fallback load for the country the user
+                // just left. Only when nobody took over must the spinner be released here, or it
+                // would run forever.
+                if (generation == flowFeedGeneration) {
+                    _uiState.update { it.copy(isLoading = false, isRefreshing = false) }
+                }
+                throw e
             } catch (e: Exception) {
                  _uiState.update { it.copy(isLoading = false, isRefreshing = false, error = appContext.getString(R.string.error_failed_to_load_feed)) }
                  loadTrendingFallback() 
@@ -1438,12 +1485,17 @@ class HomeViewModel @Inject constructor(
         return updatedSnapshot
     }
 
-    fun enrichChannelMetadataIfMissing(videoId: String) {
-        // Called from a LaunchedEffect on every rendered card. The staleness test below treats any
-        // channel id without a "UC" prefix as incomplete, so without this guard every federated
-        // card would fire a YouTube channel lookup on each scroll.
+    /**
+     * [video] rather than its id: this runs on the main thread from a `LaunchedEffect` on every
+     * rendered card, and looking the id back up meant a linear scan of the whole feed per card —
+     * to rebuild an object the caller was already holding.
+     */
+    fun enrichChannelMetadataIfMissing(video: Video) {
+        val videoId = video.id
+        // The staleness test below treats any channel id without a "UC" prefix as incomplete, so
+        // without this guard every federated card would fire a YouTube channel lookup on each
+        // scroll.
         if (videoId.contentId.kind != SourceKind.YOUTUBE) return
-        val video = _uiState.value.videos.firstOrNull { it.id == videoId } ?: return
         val needsMetadata = video.channelId.isBlank() ||
             !video.channelId.startsWith("UC") ||
             video.channelThumbnailUrl.isBlank()
@@ -1769,10 +1821,15 @@ class HomeViewModel @Inject constructor(
     // Viewport impressions: count only items actually scrolled into view.
     fun recordImpressions(visibleKeys: List<String>) {
         if (visibleKeys.isEmpty()) return
-        val knownIds = _uiState.value.videos.mapTo(HashSet()) { it.id }
-        val ids = feedImpressionIds(visibleKeys, knownIds)
-        if (ids.isEmpty()) return
-        viewModelScope.launch { FlowNeuroEngine.recordFeedImpressions(ids) }
+        // Called every 500 ms while scrolling. The id set spans the whole feed and the engine call
+        // behind it copies and sorts a map of thousands of entries — none of that belongs on the
+        // thread that is drawing the frames.
+        viewModelScope.launch(PerformanceDispatcher.parsing) {
+            val knownIds = _uiState.value.videos.mapTo(HashSet()) { it.id }
+            val ids = feedImpressionIds(visibleKeys, knownIds)
+            if (ids.isEmpty()) return@launch
+            FlowNeuroEngine.recordFeedImpressions(ids)
+        }
     }
 
     private fun dynamicFreshSubSlots(subCount: Int): Int {
