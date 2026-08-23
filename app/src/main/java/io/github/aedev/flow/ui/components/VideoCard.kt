@@ -335,7 +335,9 @@ fun VideoCard(
             horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             ChannelAvatarStack(
-                urls = video.channelAvatarUrls(collaboratorItems),
+                urls = remember(video.channelThumbnailUrl, video.channelThumbnailUrls, collaboratorItems) {
+                    video.channelAvatarUrls(collaboratorItems)
+                },
                 contentDescription = displayChannelName,
                 avatarSize = 32.dp,
                 modifier = if (onChannelClick != null) {
@@ -361,7 +363,7 @@ fun VideoCard(
                 
                 // Metadata Row
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    val premiereDate = formatPremiereDate(video.uploadDate)
+                    val premiereDate = remember(video.uploadDate) { formatPremiereDate(video.uploadDate) }
                     val displayDate = remember(video.uploadDate, video.timestamp, dateSettings) {
                         dateSettings.format(video.uploadDate, DateContext.LISTS, video.timestamp)
                     }
@@ -629,7 +631,7 @@ fun VideoCardHorizontal(
                     }
                 )
 
-                val premiereDate = formatPremiereDate(video.uploadDate)
+                val premiereDate = remember(video.uploadDate) { formatPremiereDate(video.uploadDate) }
                 val displayDate = remember(video.uploadDate, video.timestamp, dateSettings) {
                     dateSettings.format(video.uploadDate, DateContext.LISTS, video.timestamp)
                 }
@@ -837,7 +839,9 @@ fun VideoCardFullWidth(
         ) {
             if (showChannelAvatar) {
                 ChannelAvatarStack(
-                    urls = video.channelAvatarUrls(collaboratorItems),
+                    urls = remember(video.channelThumbnailUrl, video.channelThumbnailUrls, collaboratorItems) {
+                        video.channelAvatarUrls(collaboratorItems)
+                    },
                     contentDescription = displayChannelName,
                     avatarSize = 40.dp,
                     modifier = if (onChannelClick != null) {
@@ -863,7 +867,7 @@ fun VideoCardFullWidth(
                     overflow = TextOverflow.Ellipsis
                 )
 
-                val premiereDate = formatPremiereDate(video.uploadDate)
+                val premiereDate = remember(video.uploadDate) { formatPremiereDate(video.uploadDate) }
                 val displayDate = remember(video.uploadDate, video.timestamp, dateSettings) {
                     dateSettings.format(video.uploadDate, DateContext.LISTS, video.timestamp)
                 }
@@ -1195,7 +1199,7 @@ fun CompactVideoCard(
                 else Modifier
             )
             
-            val premiereDate = formatPremiereDate(video.uploadDate)
+            val premiereDate = remember(video.uploadDate) { formatPremiereDate(video.uploadDate) }
             val displayDate = remember(video.uploadDate, video.timestamp, dateSettings) {
                 dateSettings.format(video.uploadDate, DateContext.LISTS, video.timestamp)
             }
@@ -1797,7 +1801,7 @@ fun ChannelAvatarImage(
                         Log.e(AVATAR_TAG, "Expected String model but got ${currentModel::class.simpleName}")
                         return@AsyncImage
                     }
-                    val lowRes = src.replace(Regex("=s\\d+"), "=s88")
+                    val lowRes = src.replace(AVATAR_SIZE_PARAM, "=s88")
                     if (lowRes != src) {
                         Log.w(AVATAR_TAG, "Failed '$src' ($errMsg) → retrying with '$lowRes'")
                         currentModel = lowRes
@@ -1813,6 +1817,9 @@ fun ChannelAvatarImage(
         )
     }
 }
+
+/** Compiled once; this used to be rebuilt inside the avatar error callback below. */
+private val AVATAR_SIZE_PARAM = Regex("=s\\d+")
 
 @Composable
 fun ChannelAvatarStack(

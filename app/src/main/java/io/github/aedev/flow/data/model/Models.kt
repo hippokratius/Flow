@@ -1,8 +1,10 @@
 package io.github.aedev.flow.data.model
 
+import androidx.compose.runtime.Immutable
 import io.github.aedev.flow.data.source.SourceKind
 import org.schabi.newpipe.extractor.Page
 
+@Immutable
 data class VideoCollaborator(
     val name: String,
     val channelId: String = "",
@@ -10,6 +12,17 @@ data class VideoCollaborator(
     val subscriberCountText: String = ""
 )
 
+/**
+ * Marked immutable so the feed's cards can skip.
+ *
+ * Compose infers this type as unstable — three `List` fields — and an unstable parameter means a
+ * card composable can never be skipped: every state emission re-runs its whole body for every
+ * visible row, and the home feed emits often. The promise is honest: every field is a `val`, the
+ * lists are built fresh at each construction site and never mutated afterwards, and a `Video` is
+ * only ever replaced wholesale via `copy()`. **Keep it that way** — mutating one of these lists in
+ * place would make the UI silently stop updating rather than crash.
+ */
+@Immutable
 data class Video(
     val id: String,
     val title: String,

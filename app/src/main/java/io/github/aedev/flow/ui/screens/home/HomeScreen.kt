@@ -148,9 +148,17 @@ fun HomeScreen(
 
     // Viewport impressions: only items dwelt in view are recorded as "shown".
     LaunchedEffect(gridState) {
-        snapshotFlow { gridState.layoutInfo.visibleItemsInfo.mapNotNull { it.key as? String } }
+        // The observed expression re-runs on every frame the layout changes, so it must stay cheap:
+        // building the key list up front allocated one list per frame and compared it against the
+        // previous one, with the debounce sitting uselessly downstream. A scrolled-to-rest viewport
+        // is what the debounce waits for anyway, so the keys can be read once it fires.
+        snapshotFlow { gridState.firstVisibleItemIndex to gridState.layoutInfo.visibleItemsInfo.size }
             .debounce(500)
-            .collect { viewModel.recordImpressions(it) }
+            .collect {
+                viewModel.recordImpressions(
+                    gridState.layoutInfo.visibleItemsInfo.mapNotNull { item -> item.key as? String }
+                )
+            }
     }
 
     LaunchedEffect(refreshHomeOnReselect) {
@@ -316,6 +324,11 @@ fun HomeScreen(
                 }
 
                 else -> {
+                    // One reuse pool per card shape. Without a content type the grid may hand a
+                    // shelf's retired composition to a card slot, and a structurally mismatched
+                    // reuse costs more than a fresh composition. List and grid mode render
+                    // different cards, so they must not share a pool either.
+                    val cardContentType = if (isListView) "video_list" else "video_grid"
                     LazyVerticalGrid(
                         columns = gridCells,
                         modifier = Modifier.fillMaxSize(),
@@ -334,29 +347,32 @@ fun HomeScreen(
                             val insertShortsAfter = layoutConfig.shortsShelfAfterIndex.coerceAtMost(videos.size)
 
                             // ── Videos before shelves ──
-                            val videosBeforeShorts = videos.take(insertShortsAfter)
+                            // Indexed rather than `take`/`drop`: those copy half the feed every
+                            // time this lambda re-runs, which is on every state emission.
                             items(
-                                items = videosBeforeShorts,
-                                key = { it.id }
-                            ) { video ->
+                                count = insertShortsAfter,
+                                key = { videos[it].id },
+                                contentType = { cardContentType }
+                            ) { index ->
+                                val video = videos[index]
                                 LaunchedEffect(
                                     video.id,
                                     video.channelId,
                                     video.channelThumbnailUrl
                                 ) {
-                                    viewModel.enrichChannelMetadataIfMissing(video.id)
+                                    viewModel.enrichChannelMetadataIfMissing(video)
                                 }
                                 if (isListView) {
                                     VideoCardHorizontal(
                                         video = video,
                                         onClick = { onVideoClick(video) },
-                                        onChannelClick = { channelId -> onChannelClick(channelId) }
+                                        onChannelClick = onChannelClick
                                     )
                                 } else {
                                     VideoCardFullWidth(
                                         video = video,
                                         onClick = { onVideoClick(video) },
-                                        onChannelClick = { channelId -> onChannelClick(channelId) },
+                                        onChannelClick = onChannelClick,
                                         useInternalPadding = false
                                     )
                                 }
@@ -366,7 +382,8 @@ fun HomeScreen(
                             if (uiState.continueWatchingVideos.isNotEmpty()) {
                                 item(
                                     span = { GridItemSpan(maxLineSpan) },
-                                    key = "continue_watching_shelf"
+                                    key = "continue_watching_shelf",
+                                    contentType = "continue_watching_shelf"
                                 ) {
                                     ContinueWatchingShelf(
                                         entries = uiState.continueWatchingVideos,
@@ -399,40 +416,42 @@ fun HomeScreen(
                             if (uiState.shorts.isNotEmpty()) {
                                 item(
                                     span = { GridItemSpan(maxLineSpan) },
-                                    key = "shorts_shelf"
+                                    key = "shorts_shelf",
+                                    contentType = "shorts_shelf"
                                 ) {
                                     ShortsShelf(
                                         shorts = uiState.shorts,
-                                        onShortClick = { onShortClick(it) },
+                                        onShortClick = onShortClick,
                                         onSeeAllClick = onOpenShortsFeed
                                     )
                                 }
                             }
 
                             // ── Remaining Videos ──
-                            val videosAfterShorts = videos.drop(insertShortsAfter)
                             items(
-                                items = videosAfterShorts,
-                                key = { it.id }
-                            ) { video ->
+                                count = videos.size - insertShortsAfter,
+                                key = { videos[insertShortsAfter + it].id },
+                                contentType = { cardContentType }
+                            ) { index ->
+                                val video = videos[insertShortsAfter + index]
                                 LaunchedEffect(
                                     video.id,
                                     video.channelId,
                                     video.channelThumbnailUrl
                                 ) {
-                                    viewModel.enrichChannelMetadataIfMissing(video.id)
+                                    viewModel.enrichChannelMetadataIfMissing(video)
                                 }
                                 if (isListView) {
                                     VideoCardHorizontal(
                                         video = video,
                                         onClick = { onVideoClick(video) },
-                                        onChannelClick = { channelId -> onChannelClick(channelId) }
+                                        onChannelClick = onChannelClick
                                     )
                                 } else {
                                     VideoCardFullWidth(
                                         video = video,
                                         onClick = { onVideoClick(video) },
-                                        onChannelClick = { channelId -> onChannelClick(channelId) },
+                                        onChannelClick = onChannelClick,
                                         useInternalPadding = false
                                     )
                                 }
@@ -442,6 +461,7 @@ fun HomeScreen(
                         if (uiState.isLoadingMore) {
                             item(
                                 key = "loading_indicator",
+                                contentType = "loading_indicator",
                                 span = { GridItemSpan(maxLineSpan) }
                             ) {
                                 Box(
@@ -462,6 +482,7 @@ fun HomeScreen(
                         if (!uiState.hasMorePages && uiState.videos.size > 100 && !uiState.isLoadingMore) {
                             item(
                                 key = "feed_footer",
+                                contentType = "feed_footer",
                                 span = { GridItemSpan(maxLineSpan) }
                             ) {
                                 FlowFeedFooter(

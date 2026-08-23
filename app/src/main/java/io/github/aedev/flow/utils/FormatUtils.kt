@@ -167,20 +167,32 @@ fun formatPremiereDate(dateString: String): String? {
 fun parsePremiereTimestamp(dateString: String): Long? =
     parsePremiereDate(dateString)?.time
 
+/**
+ * Every pattern below starts with an ISO date, so anything that does not is not a premiere date.
+ *
+ * Without this test, a perfectly ordinary relative date — "3 days ago", "vor 3 Tagen" — walked the
+ * whole list, building a `SimpleDateFormat` and throwing a `ParseException` for each of the eight
+ * patterns. Feed cards ask for this on every composition, so those were eight thrown exceptions per
+ * card per frame, for a result the card then discarded.
+ */
+private val ISO_DATE_PREFIX = Regex("""^\d{4}-\d{2}-\d{2}""")
+
+private val PREMIERE_DATE_FORMATS = listOf(
+    "yyyy-MM-dd HH:mm",
+    "yyyy-MM-dd'T'HH:mm:ssXXX",
+    "yyyy-MM-dd'T'HH:mm:ssX",
+    "yyyy-MM-dd'T'HH:mm:ss.SSSXXX",
+    "yyyy-MM-dd'T'HH:mm:ss.SSSX",
+    "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'",
+    "yyyy-MM-dd'T'HH:mm:ss",
+    "yyyy-MM-dd"
+)
+
 private fun parsePremiereDate(dateString: String): java.util.Date? {
     if (dateString.isBlank()) return null
-    val formats = listOf(
-        "yyyy-MM-dd HH:mm",
-        "yyyy-MM-dd'T'HH:mm:ssXXX",
-        "yyyy-MM-dd'T'HH:mm:ssX",
-        "yyyy-MM-dd'T'HH:mm:ss.SSSXXX",
-        "yyyy-MM-dd'T'HH:mm:ss.SSSX",
-        "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'",
-        "yyyy-MM-dd'T'HH:mm:ss",
-        "yyyy-MM-dd"
-    )
+    if (!ISO_DATE_PREFIX.containsMatchIn(dateString)) return null
     var date: java.util.Date? = null
-    for (fmt in formats) {
+    for (fmt in PREMIERE_DATE_FORMATS) {
         try {
             val sdf = java.text.SimpleDateFormat(fmt, java.util.Locale.US)
             sdf.timeZone = java.util.TimeZone.getDefault()

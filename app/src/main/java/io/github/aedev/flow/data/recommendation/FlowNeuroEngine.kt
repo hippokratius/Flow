@@ -252,9 +252,12 @@ class FlowNeuroEngine(private val appContext: Context) {
     // PUBLIC API
     // =================================================
 
-    suspend fun initialize() {
+    // The load reads DataStore and then walks up to a couple of thousand history entries plus the
+    // IDF map. Several of the seven callers launch this without a dispatcher, so it is pinned here
+    // rather than at each call site — one of them is the home feed's own init, on the main thread.
+    suspend fun initialize() = withContext(Dispatchers.IO) {
         brainMutex.withLock {
-            if (isInitialized) return
+            if (isInitialized) return@withLock
 
             val loaded = storage.load()
             if (loaded != null) {
@@ -1238,8 +1241,10 @@ class FlowNeuroEngine(private val appContext: Context) {
 
     }
 
-    suspend fun recordFeedImpressions(ids: List<String>) {
-        if (ids.isEmpty()) return
+    // withContext outside the lock, never inside: a dispatcher hop while holding brainMutex would
+    // stretch the critical section and serialise every other caller behind a thread handoff.
+    suspend fun recordFeedImpressions(ids: List<String>) = withContext(Dispatchers.Default) {
+        if (ids.isEmpty()) return@withContext
         val now = System.currentTimeMillis()
 
         brainMutex.withLock {

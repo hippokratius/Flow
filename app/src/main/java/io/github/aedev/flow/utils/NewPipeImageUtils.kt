@@ -18,7 +18,10 @@ fun List<Image>?.distinctBestImageUrls(limit: Int = 2): List<String> =
         .take(limit)
         .toList()
 
+/** Compiled once: this runs per avatar URL, per card, on every composition of the feed. */
+private val AVATAR_SIZE_SUFFIX = Regex("=s\\d+.*$")
+
 internal fun String?.avatarImageIdentityKey(): String =
     orEmpty()
         .substringBefore("?")
-        .replace(Regex("=s\\d+.*$"), "")
+        .replace(AVATAR_SIZE_SUFFIX, "")

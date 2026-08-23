@@ -44,6 +44,7 @@ import io.github.aedev.flow.player.EnhancedMusicPlayerManager
 import io.github.aedev.flow.player.EnhancedPlayerManager
 import io.github.aedev.flow.player.GlobalPlayerState
 import io.github.aedev.flow.player.SleepTimerManager
+import io.github.aedev.flow.ui.components.LocalDateDisplaySettings
 import io.github.aedev.flow.ui.components.DonationPromptHost
 import io.github.aedev.flow.ui.components.FloatingBottomNavBar
 import io.github.aedev.flow.ui.components.MusicPlayerBottomSheet
@@ -258,6 +259,13 @@ fun FlowApp(
         }
     }
     
+    // One place resolves the date settings for every screen below. Read per call, this was five
+    // DataStore collectors *per feed card* — twenty cards meant a hundred collectors, each
+    // delivering a default before the real value and invalidating the card again in between.
+    val dateDisplaySettings by preferences.dateDisplaySettings
+        .collectAsState(initial = io.github.aedev.flow.utils.DateDisplaySettings())
+
+    CompositionLocalProvider(LocalDateDisplaySettings provides dateDisplaySettings) {
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val density = LocalDensity.current
         val screenHeightPx = constraints.maxHeight.toFloat()
@@ -732,6 +740,7 @@ fun FlowApp(
         onNavigateToDonations = { navController.navigate("donations") }
     )
   }
+    }
 }
 
 private fun String.isLibraryOrSettingsRouteForMusicMiniPlayer(): Boolean {

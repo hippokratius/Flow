@@ -14,7 +14,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
-import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -50,18 +50,22 @@ fun Modifier.thumbnailGradientOverlay(
     color: Color = Color.Black,
     alpha: Float = 0.25f,
     startFraction: Float = 0.6f
-): Modifier = this.drawWithContent {
-    drawContent()
-    drawRect(
-        brush = Brush.verticalGradient(
-            colors = listOf(
-                Color.Transparent,
-                color.copy(alpha = alpha)
-            ),
-            startY = size.height * startFraction,
-            endY = size.height
-        )
+// drawWithCache, not drawWithContent: the brush depends on the size, so it cannot be hoisted to a
+// val — but rebuilding it inside the draw phase meant one gradient allocation per card per frame.
+// This rebuilds it only when the size actually changes. Pixel-identical.
+): Modifier = this.drawWithCache {
+    val overlay = Brush.verticalGradient(
+        colors = listOf(
+            Color.Transparent,
+            color.copy(alpha = alpha)
+        ),
+        startY = size.height * startFraction,
+        endY = size.height
     )
+    onDrawWithContent {
+        drawContent()
+        drawRect(brush = overlay)
+    }
 }
 
 /**
